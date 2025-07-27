@@ -88,8 +88,10 @@ const startServer = async () => {
       throw error;
     }
 
+    logger.info('DEBUG: Setting up Express routes...');
     // 🌐 Serve Angular static files from public directory
     app.use(express.static(path.join(__dirname, '../public')));
+    logger.info('DEBUG: 1. Static directory configured.');
 
     // Health check endpoint for Docker
     app.get('/health', (req, res) => {
@@ -104,11 +106,12 @@ const startServer = async () => {
         }
       });
     });
+    logger.info('DEBUG: 2. Health check endpoint configured.');
 
     // HTTP proxy endpoint to serve FTP files for browser compatibility
-    app.get('/ftp-proxy/:fileName', async (req, res) => {
+    app.get('/ftp-proxy/:filename', async (req, res) => {
       try {
-        const { fileName } = req.params;
+        const fileName = req.params.filename;
         const ftpDataDir = './ftp_data';
         const filePath = path.join(ftpDataDir, fileName);
 
@@ -137,13 +140,14 @@ const startServer = async () => {
         res.json(jsonData);
 
       } catch (error) {
-        logger.error('Error serving FTP file via HTTP proxy', { error, fileName: req.params.fileName });
+        logger.error('Error serving FTP file via HTTP proxy', { error, fileName: req.params.filename });
         res.status(500).json({
           error: 'Internal server error',
           message: 'Failed to serve file from FTP storage'
         });
       }
     });
+    logger.info('DEBUG: 3. FTP proxy endpoint configured.');
 
     // List available FTP files endpoint
     app.get('/ftp-proxy', async (req, res) => {
@@ -163,19 +167,16 @@ const startServer = async () => {
         });
       }
     });
+    logger.info('DEBUG: 4. FTP list files endpoint configured.');
 
-    // 🎯 Catch-all handler for Angular client-side routing
-    app.get('*', (req, res) => {
-      // Skip API routes and FTP proxy routes
-      if (req.path.startsWith('/ftp-proxy') || req.path.startsWith('/health')) {
-        return res.status(404).json({ error: 'API endpoint not found' });
-      }
-      
-      // Serve Angular index.html for all other routes
+    // Serve Angular index.html for root path
+    app.get('/', (req, res) => {
       res.sendFile(path.join(__dirname, '../public/index.html'));
     });
+    logger.info('DEBUG: 5. Root route configured.');
 
     app.use(errorHandler);
+    logger.info('DEBUG: 6. Error handler configured.');
 
     logger.info('🔧 Starting HTTP server...');
     const httpPort = process.env.HTTP_PROXY_PORT || 3000;
@@ -219,8 +220,13 @@ const startServer = async () => {
     // Ticker data initialization is now handled by FTP service on first connection
     logger.info('📊 Ticker data will be initialized on first FTP connection (background)');
 
-  } catch (error) {
-    logger.error('Failed to start server', { error });
+  } catch (error: any) {
+    logger.error('Failed to start server', {
+      errorObject: error,
+      errorMessage: error?.message,
+      errorStack: error?.stack,
+      errorConstructor: error?.constructor?.name,
+    });
     process.exit(1);
   }
 };

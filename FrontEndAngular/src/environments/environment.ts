@@ -1,13 +1,13 @@
 export const environment = {
   production: false,
   // Base API URL for HTTP communication
-  apiUrl: 'http://localhost:3000',
+  apiUrl: 'http://localhost:3001',
   
   // HTTP proxy configuration (preferred for browser compatibility)
   httpProxy: {
     enabled: true,
-    baseUrl: 'http://localhost:3000/ftp-proxy',
-    listUrl: 'http://localhost:3000/ftp-proxy'
+    baseUrl: 'http://localhost:3001/ftp-proxy',
+    listUrl: 'http://localhost:3001/ftp-proxy'
   },
   
   // FTP configuration (fallback for direct FTP access)

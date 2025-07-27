@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: stock-trading-dashboard
     ports:
-      - '3000:3000'    # HTTP server (Angular + API)
+      - '3001:3000'    # HTTP server (Angular + API)
       - '20:20'        # FTP server (primary data interface)
     depends_on:
       - postgres
