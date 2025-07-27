@@ -1,0 +1,25 @@
+# Exclude node_modules to prevent platform-specific binary issues
+node_modules/
+**/node_modules/
+
+# Exclude development files
+.git/
+.env
+*.log
+.DS_Store
+Thumbs.db
+
+# Exclude Angular build outputs
+FrontEndAngular/dist/
+BackEndExpressJS/dist/
+
+# Exclude IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Exclude temporary files
+tmp/
+temp/
+*.tmp 

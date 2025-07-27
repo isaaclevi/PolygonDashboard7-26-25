@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - '20:20'    # FTP server port (PRIMARY frontend interface)
+    depends_on:
+      - db
+    environment:
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - DB_HOST=db
+      - DB_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - FTP_PORT=${FTP_PORT}
+      - FTP_USER=${FTP_USER}
+      - FTP_PASS=${FTP_PASS}
+      - PORT=${PORT}
+      - LOG_LEVEL=${LOG_LEVEL}
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

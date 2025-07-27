@@ -1,0 +1,13 @@
+<div class="dashboard-container">
+  <header class="dashboard-header">
+    <h1>Stock Data Dashboard</h1>
+  </header>
+  <main class="dashboard-main">
+    <div class="controls-container">
+      <app-data-controls></app-data-controls>
+    </div>
+    <div class="chart-container" *ngIf="chartData">
+      <app-chart-container [chartData]="chartData" [chartColors]="chartColors"></app-chart-container>
+    </div>
+  </main>
+</div>

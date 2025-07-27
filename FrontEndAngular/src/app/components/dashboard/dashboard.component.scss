@@ -1,0 +1,29 @@
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #1a1a1a;
+  color: #fff;
+}
+
+.dashboard-header {
+  padding: 1rem;
+  text-align: center;
+  border-bottom: 1px solid #333;
+}
+
+.dashboard-main {
+  display: flex;
+  flex: 1;
+}
+
+.controls-container {
+  width: 250px;
+  padding: 1rem;
+  border-right: 1px solid #333;
+}
+
+.chart-container {
+  flex: 1;
+  padding: 1rem;
+}

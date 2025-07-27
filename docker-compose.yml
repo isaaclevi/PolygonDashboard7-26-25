@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  stock-dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stock-trading-dashboard
+    ports:
+      - '3000:3000'    # HTTP server (Angular + API)
+      - '20:20'        # FTP server (primary data interface)
+    depends_on:
+      - postgres
+    environment:
+      # Polygon.io API Configuration
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      
+      # Database Configuration
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-stock_data}
+      
+      # Server Configuration
+      - PORT=3000
+      - FTP_PORT=20
+      - FTP_USER=${FTP_USER:-admin}
+      - FTP_PASS=${FTP_PASS:-admin}
+      - HTTP_PROXY_PORT=3000
+      
+      # Application Configuration
+      - NODE_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      
+    volumes:
+      - stock_data:/app/ftp_data
+      - stock_logs:/app/logs
+    networks:
+      - stock-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: stock-postgres
+    environment:
+      - POSTGRES_USER=${DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${DB_NAME:-stock_data}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./BackEndExpressJS/database-setup.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    networks:
+      - stock-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stock-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@admin.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    ports:
+      - '8080:80'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - stock-network
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+  stock_data:
+    driver: local
+  stock_logs:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  stock-network:
+    driver: bridge 

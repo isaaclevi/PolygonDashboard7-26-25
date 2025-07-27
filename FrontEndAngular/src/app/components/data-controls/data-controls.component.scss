@@ -1,0 +1,35 @@
+.data-controls-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+}
+
+label {
+  margin-bottom: 0.5rem;
+}
+
+input[type="text"],
+input[type="date"],
+button {
+  padding: 0.5rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  background-color: #2a2a2a;
+  color: #fff;
+}
+
+button {
+  cursor: pointer;
+  background-color: #007bff;
+  border-color: #007bff;
+}
+
+.radio-group {
+  display: flex;
+  gap: 1rem;
+}

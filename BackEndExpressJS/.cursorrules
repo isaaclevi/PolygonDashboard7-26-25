@@ -1,0 +1,287 @@
+# Express.js TypeScript Stock Data Backend - Cursor Rules
+
+## Project Overview
+This is an Express.js TypeScript backend server for real-time stock data processing:
+- **Real-time Data**: WebSocket integration with Polygon.io API for live stock and trade data streams
+- **Database**: PostgreSQL with consolidated trades table for all stock data (OHLCV + individual trades)
+- **FTP Server**: Custom FTP server using `ftp-srv` for data file sharing
+- **Data Processing**: Real-time data ingestion, aggregation, and JSON file generation
+- **Polygon.io Integration**: Live trades, quotes, and minute aggregates via WebSocket
+- **Logging**: Winston logger with structured logging
+- **Validation**: Zod for runtime type validation
+
+## Communication Flow & Data Architecture
+
+### Data Ingestion Flow
+1. **Polygon.io → WebSocket → PolygonService**
+   - Real-time market data streams into backend
+   - Trade and quote data processing and validation
+2. **PolygonService → DatabaseService → PostgreSQL**
+   - Processed data stored in database tables
+   - Accessible via PGAdmin for direct database management
+
+### Data Access Flow
+1. **Frontend Dashboard → FTP Client → FTPService**
+   - All frontend-backend communication via FTP protocol only
+   - Historical data queries through FTP file requests
+   - Real-time data access through FTP file polling/downloads
+   - JSON file transfers for all data access (JSON format only)
+
+### Communication Protocols by Entity
+- **PostgreSQL/PGAdmin**: SQL queries via `pg` client (DatabaseService)
+- **Polygon.io**: WebSocket streaming via `ws` client (PolygonService)  
+- **Frontend Dashboard**: FTP protocol ONLY (FTPService) - NO HTTP/REST connections
+
+### Frontend Communication Standards
+- **All Data Formats**: JSON only - no CSV, XML, or other formats
+- **REST API**: JSON request/response bodies for all endpoints
+- **FTP Files**: JSON format only for all downloadable data files
+- **Error Responses**: JSON formatted error messages with consistent structure
+- **Data Consistency**: All timestamps in ISO 8601 format, all numbers as JSON numbers
+
+## Architecture Patterns
+- **Service Layer Architecture**: Business logic separated into dedicated service classes
+- **Factory Pattern**: Use factory design pattern for all service instantiation and data processing widgets
+- **Controller Pattern**: Thin controllers that delegate to services
+- **Type Safety**: Strict TypeScript with runtime validation using Zod
+- **Environment Config**: All configuration through environment variables
+
+## Code Style & Standards
+
+### TypeScript
+- Use strict TypeScript with proper typing for all functions and classes
+- Prefer async/await over Promises for asynchronous operations
+- Use meaningful variable and function names with clear intent
+- Use camelCase for variables, functions, and properties
+- Use PascalCase for classes, interfaces, and types
+- Use UPPER_SNAKE_CASE for constants and environment variables
+
+### Express.js Backend
+- Keep service classes focused - delegate business logic appropriately
+- Use service classes for all business logic (DatabaseService, PolygonService, FTPService)
+- **NO HTTP Controllers**: Remove REST API controllers - frontend uses FTP only
+- Use async/await for all database and API operations
+- **FTP-First Architecture**: All frontend communication through FTP file operations
+- Validate all data using Zod validators before file generation
+- **JSON File Format**: All data files generated in JSON format
+- **Error Handling**: Error information embedded in JSON file metadata or FTP responses
+
+### Database Operations
+- Use proper TypeScript types for all database models
+- Implement parameterized queries to prevent SQL injection
+- Use connection pooling for database performance
+- Follow consistent naming conventions (snake_case for database columns)
+- Implement proper indexing for frequently queried fields
+- Use transactions for multi-step database operations
+
+### WebSocket Integration
+- Handle WebSocket connections with proper error handling
+- Implement reconnection logic for dropped connections
+- Use structured logging for WebSocket events
+- Buffer data appropriately to prevent memory issues
+
+## File Structure Rules
+```
+src/
+├── config/           # Configuration files (database.ts, polygon.ts, ftp.ts)
+├── generators/       # Data file generators (DataFileGenerator.ts) - replaces controllers
+├── middleware/       # Express middleware (errorHandler.ts) - minimal usage
+├── models/           # Database models (Trades.ts)
+├── services/         # Business logic services (DatabaseService.ts, PolygonService.ts, FTPService.ts)
+├── types/            # TypeScript type definitions (index.ts)
+├── utils/            # Utility functions (logger.ts, validators.ts, db-init.ts)
+└── server.ts         # Main application entry point (FTP server only)
+```
+
+## Service Classes & Communication Responsibilities
+
+### DatabaseService (PostgreSQL/PGAdmin Interface)
+- **Purpose**: PostgreSQL database connection and query management
+- **Communication**: Direct database connection via `pg` client
+- **Responsibilities**:
+  - Execute parameterized SQL queries for stock data retrieval
+  - Manage connection pooling and transaction handling
+  - Provide data access layer for REST API endpoints
+  - Interface with PGAdmin-managed database schema
+
+### PolygonService (Polygon.io WebSocket Interface)
+- **Purpose**: Real-time data ingestion from Polygon.io
+- **Communication**: WebSocket connection to Polygon.io streaming API
+- **Responsibilities**:
+  - Establish and maintain WebSocket connection to Polygon.io
+  - Subscribe to real-time trade and quote data streams
+  - Process incoming market data and transform for database storage
+  - Handle connection failures and implement reconnection logic
+
+### FTPService (Frontend Dashboard Interface)
+- **Purpose**: File transfer server for frontend dashboard data access
+- **Communication**: FTP protocol server using `ftp-srv`
+- **Responsibilities**:
+  - Start and manage FTP server on configured port
+  - Handle client authentication and file requests
+  - Generate and serve data files in JSON format only
+  - Provide bulk data download capabilities for dashboard
+
+### DataFileGenerator (FTP File Management)
+- **Purpose**: Generate JSON data files for FTP access (replaces REST controllers)
+- **Communication**: File system operations for FTP server
+- **Responsibilities**:
+  - Generate JSON data files based on database queries
+  - Coordinate with DatabaseService for data retrieval
+  - Format ALL data in JSON for FTP file consumption
+  - Handle data processing errors in JSON file metadata
+  - Ensure consistent JSON structure for all data files
+  - Manage file lifecycle and cleanup for FTP directory
+
+## Environment Configuration
+Required environment variables in `.env`:
+```
+# Polygon.io API
+POLYGON_API_KEY=your_polygon_api_key
+
+# PostgreSQL Database
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=your_password
+DB_NAME=stock_data
+
+# FTP Server
+FTP_PORT=20
+FTP_USER=admin
+FTP_PASS=admin
+
+# Application
+PORT=3000
+LOG_LEVEL=info
+```
+
+## Dependencies Management
+### Core Dependencies
+- `express`: Web framework
+- `pg`: PostgreSQL client
+- `ws`: WebSocket client for Polygon.io
+- `ftp-srv`: FTP server implementation
+- `winston`: Structured logging
+- `dotenv`: Environment variable management
+- `zod`: Runtime type validation
+
+### Development Dependencies
+- `typescript`: TypeScript compiler
+- `ts-node-dev`: Development server with hot reload
+- `@types/*`: TypeScript type definitions
+
+## Database Schema
+- **stocks**: Stock symbol information
+- **price_data**: OHLCV price data with timestamps
+- **trade_data**: Individual trade records with volume and price
+
+## API Communication Architecture
+
+### REST API - Database Communication (PGAdmin/PostgreSQL)
+- **Purpose**: Query and retrieve stored stock data from PostgreSQL database
+- **Protocol**: HTTP REST endpoints
+- **Target Entity**: PostgreSQL database (accessible via PGAdmin)
+- **Endpoints**:
+  - `GET /stock-data`: Query historical stock data with parameters:
+    - `symbol`: Stock symbol (required)
+    - `timeframe`: Time interval (1min, 5min, 1hour, 1day)
+    - `startDate`: Start date (ISO 8601)
+    - `endDate`: End date (ISO 8601)
+- **Data Flow**: Frontend Dashboard → REST API → PostgreSQL Database
+- **Response Format**: JSON with OHLCV data and metadata
+
+### WebSocket Connection - Real-time Data Ingestion (Polygon.io)
+- **Purpose**: Real-time stock data streaming and ingestion
+- **Protocol**: WebSocket (WSS)
+- **Target Entity**: Polygon.io WebSocket API
+- **Data Types**:
+  - Trade data (real-time trades)
+  - Quote data (bid/ask prices)
+  - Aggregate data (minute/hour bars)
+- **Data Flow**: Polygon.io → WebSocket → Backend Services → PostgreSQL
+- **Connection Management**: Auto-reconnection, heartbeat monitoring, error handling
+
+### FTP Communication - File Transfer (Frontend Dashboard)
+- **Purpose**: Bulk data file transfer and download for frontend dashboard
+- **Protocol**: FTP (File Transfer Protocol)
+- **Target Entity**: Angular Frontend Dashboard
+- **Features**:
+  - **LIST**: Show available data files in directory
+  - **RETR**: Download data files in format: `SYMBOL-TIMEFRAME-STARTDATE-ENDDATE.json`
+  - **Authentication**: Using FTP_USER and FTP_PASS credentials
+- **Data Flow**: Frontend Dashboard → FTP Client → FTP Server → JSON Data Files
+- **File Formats**: JSON only - all data exported in JSON format for frontend consumption
+
+## Error Handling
+- Use custom error middleware for consistent error responses
+- Log all errors with structured logging using Winston
+- Return appropriate HTTP status codes
+- Never expose internal error details to clients
+- Implement graceful degradation for external service failures
+
+## Logging Standards
+- Use Winston logger with configurable log levels
+- Structure logs with consistent fields: timestamp, level, message, metadata
+- Log all API requests and responses
+- Log WebSocket connection events and data processing
+- Separate error logs from general application logs
+
+## Performance Considerations
+- Use connection pooling for PostgreSQL
+- Implement proper indexing on frequently queried columns
+- Buffer WebSocket data to prevent memory issues
+- Use streaming for large data transfers
+- Implement rate limiting for API endpoints
+
+## Security Guidelines
+- Validate all inputs using Zod schemas
+- Use environment variables for all sensitive data
+- Implement proper SQL injection prevention
+- Use HTTPS in production
+- Implement proper CORS configuration
+- Log security-related events
+
+## Testing Guidelines
+- Write unit tests for all service methods
+- Mock external dependencies (Polygon.io, Database)
+- Test error scenarios and edge cases
+- Use Jest or similar testing framework
+- Maintain test coverage above 80%
+- Test WebSocket connection handling
+
+## Common Patterns
+- Factory pattern for service instantiation (user preference)
+- Dependency injection through constructor parameters
+- Error-first callback pattern for async operations
+- Promise-based async operations with proper error handling
+- Configuration through environment variables
+
+## Development Scripts
+- `npm run dev`: Start development server with hot reload
+- `npm run db:init`: Initialize database schema and indexes
+- `npm test`: Run test suite
+
+## Docker Configuration
+- Dockerfile for containerization
+- docker-compose.yml for multi-service deployment
+- Environment variable injection from host system
+
+## When Making Changes
+- Update TypeScript interfaces when modifying data structures
+- Add appropriate Zod validation for new input parameters
+- Update database schema migration scripts when adding new models
+- Test WebSocket reconnection after API changes
+- Update environment variable documentation
+- Ensure proper error handling in all new code
+- Add structured logging for new features
+- **JSON Consistency**: Ensure all new endpoints return JSON format only
+- **FTP Files**: Generate only JSON files for frontend consumption
+- **Error Responses**: Maintain consistent JSON error structure across all endpoints
+
+## Known Issues to Watch
+- WebSocket connection stability with Polygon.io
+- FTP port configuration (currently set to 20, ensure client compatibility)
+- Database connection pool exhaustion under high load
+- Memory usage with large WebSocket data streams
+- Environment variable synchronization between Docker and local development 

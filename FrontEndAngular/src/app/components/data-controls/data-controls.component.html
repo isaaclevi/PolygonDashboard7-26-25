@@ -1,0 +1,27 @@
+<div class="data-controls-container">
+  <app-stock-selector (stockSelected)="onStockSelected($event)"></app-stock-selector>
+  <div class="control-group">
+    <label>Timeframe</label>
+    <div class="radio-group">
+      <input type="radio" id="1min" name="timeframe" value="1min" [(ngModel)]="timeframe">
+      <label for="1min">1min</label>
+      <input type="radio" id="5min" name="timeframe" value="5min" [(ngModel)]="timeframe">
+      <label for="5min">5min</label>
+      <input type="radio" id="1hour" name="timeframe" value="1hour" [(ngModel)]="timeframe">
+      <label for="1hour">1hour</label>
+      <input type="radio" id="1day" name="timeframe" value="1day" [(ngModel)]="timeframe">
+      <label for="1day">1day</label>
+    </div>
+  </div>
+  <div class="control-group">
+    <label for="start-date">Start Date</label>
+    <input type="date" id="start-date" [(ngModel)]="startDate">
+  </div>
+  <div class="control-group">
+    <label for="end-date">End Date</label>
+    <input type="date" id="end-date" [(ngModel)]="endDate">
+  </div>
+  <div class="control-group">
+    <button (click)="onGetData()">Get Data</button>
+  </div>
+</div>

@@ -1,0 +1,13 @@
+.dual-chart-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.price-chart-container {
+  height: 70%;
+}
+
+.volume-chart-container {
+  height: 30%;
+}
