@@ -398,6 +398,18 @@ class DataFileGenerator {
         listDate: '2011-10-03'
       },
       {
+        symbol: 'UVIX',
+        name: 'Volatility Shares 2x Long VIX Futures ETF',
+        description: '2x Leveraged VIX Short-Term Futures ETF',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'CBOE',
+        active: true,
+        currency: 'USD',
+        type: 'ETF',
+        listDate: '2022-03-28'
+      },
+      {
         symbol: 'VIXY',
         name: 'ProShares VIX Short-Term Futures ETF',
         description: 'VIX Short-Term Futures ETF (1x exposure)',

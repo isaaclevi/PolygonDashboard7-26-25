@@ -468,7 +468,7 @@ export class StockSelectorComponent implements OnInit, OnDestroy {
    * Get popular stocks based on market cap and common symbols
    */
   private getPopularStocks(): StockOption[] {
-    const popularSymbols = ['ACHR','JOBY','WULF','UVXY','VXX','SVIX','AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'JNJ', 'V', 'UNH', 'HD', 'PG', 'MA', 'DIS', 'ADBE', 'NFLX', 'XOM', 'TMO', 'ABT'];
+    const popularSymbols = ['ACHR','JOBY','WULF','UVXY','UVIX','VXX','SVIX','AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'META', 'NVDA', 'JPM', 'JNJ', 'V', 'UNH', 'HD', 'PG', 'MA', 'DIS', 'ADBE', 'NFLX', 'XOM', 'TMO', 'ABT'];
     
     // First, get stocks that match popular symbols
     const popular = this.stockOptions.filter(stock => 
