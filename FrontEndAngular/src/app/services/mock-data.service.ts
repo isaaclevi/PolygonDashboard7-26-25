@@ -240,7 +240,7 @@ export class MockDataService {
       timestamp: new Date().toISOString(),
       services: {
         database: 'mock',
-        ftp: 'mock',
+        socket: 'mock',
         websocket: 'mock'
       },
       dataFreshness: {

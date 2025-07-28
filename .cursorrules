@@ -6,8 +6,8 @@ This is a full-stack stock trading dashboard with independent frontend and backe
 ### Backend (BackEndExpressJS/)
 - **Real-time Data**: WebSocket integration with Polygon.io API for live stock and trade data streams
 - **Database**: PostgreSQL with consolidated trades table for all stock data (OHLCV + individual trades)
-- **FTP Server**: Custom FTP server using `ftp-srv` for data file sharing
-- **Data Processing**: Real-time data ingestion, aggregation, and JSON file generation
+- **Socket Server**: Custom WebSocket server for real-time data streaming and JSON data transmission
+- **Data Processing**: Real-time data ingestion, aggregation, and JSON data generation
 - **Polygon.io Integration**: Live trades, quotes, and minute aggregates via WebSocket
 - **Logging**: Winston logger with structured logging
 - **Validation**: Zod for runtime type validation
@@ -16,13 +16,13 @@ This is a full-stack stock trading dashboard with independent frontend and backe
 - **Angular 20+**: Modern Angular application with TypeScript
 - **Charts**: Chart.js with financial charting capabilities
 - **Material Design**: Angular Material for UI components
-- **FTP Client**: Basic-ftp for backend data file access
+- **Socket Client**: WebSocket client for backend data access and real-time streaming
 - **Services**: Stock data management and chart synchronization
 - **Components**: Dashboard, stock selector, data controls, chart displays
 
 ### Architecture Independence
 - **No Direct Dependencies**: Frontend and backend are completely independent applications
-- **FTP-Only Communication**: All data exchange via JSON files through FTP protocol
+- **Socket-Only Communication**: All data exchange via JSON messages through WebSocket protocol
 - **Separate Deployment**: Each application can be deployed and scaled independently
 - **Different Tech Stacks**: Backend (Node.js/Express) and Frontend (Angular) with no shared code
 
@@ -42,42 +42,42 @@ This is a full-stack stock trading dashboard with independent frontend and backe
    - Accessible via PGAdmin for direct database management
 
 ### Data Access Flow
-1. **Frontend Dashboard → FTP Client → FTPService**
-   - All frontend-backend communication via FTP protocol only
-   - Historical data queries through FTP file requests
-   - Real-time data access through FTP file polling/downloads
-   - JSON file transfers for all data access (JSON format only)
+1. **Frontend Dashboard → Socket Client → SocketService**
+   - All frontend-backend communication via WebSocket protocol only
+   - Historical data queries through socket message requests
+   - Real-time data access through socket streaming and subscriptions
+   - JSON message transfers for all data access (JSON format only)
 
 ### Communication Protocols by Entity
 - **PostgreSQL/PGAdmin**: SQL queries via `pg` client (DatabaseService)
 - **Polygon.io**: WebSocket streaming via `ws` client (PolygonService)  
-- **Frontend Dashboard**: FTP protocol ONLY (FTPService) - NO HTTP/REST connections
+- **Frontend Dashboard**: WebSocket protocol ONLY (SocketService) - NO HTTP/REST connections
 
 ### Frontend Communication Standards
-- **Protocol**: FTP ONLY - no HTTP/REST API connections to frontend
+- **Protocol**: WebSocket ONLY - no HTTP/REST API connections to frontend
 - **All Data Formats**: JSON only - no CSV, XML, or other formats
-- **FTP Files**: JSON format only for all downloadable data files
-- **Error Handling**: Error information embedded in JSON file structure or FTP status codes
+- **Socket Messages**: JSON format only for all data requests and responses
+- **Error Handling**: Error information embedded in JSON message structure or socket status codes
 - **Data Consistency**: All timestamps in ISO 8601 format, all numbers as JSON numbers
-- **File-Based Communication**: All frontend requests handled through FTP file operations
+- **Message-Based Communication**: All frontend requests handled through socket message operations
 
 ### Application Independence & Deployment
 - **Separate Codebases**: Frontend and backend are completely independent projects
 - **No Shared Dependencies**: Each application manages its own node_modules and dependencies
 - **Independent Deployment**: Applications can be deployed to different servers/containers
-- **Different Ports**: Backend (FTP server) and Frontend (Angular dev server) run on different ports
+- **Different Ports**: Backend (Socket server) and Frontend (Angular dev server) run on different ports
 - **No Cross-References**: No import statements or direct code sharing between applications
 - **Environment Isolation**: Each application has its own environment configuration
 - **Version Independence**: Frontend and backend can be updated independently
 - **Technology Freedom**: Each stack can evolve independently (Angular versions, Node.js versions)
 
-### FTP Polling & File Management Strategy
-- **File Refresh**: Generate updated files periodically or on data changes
-- **File Timestamps**: Use file modification times for frontend change detection
-- **Directory Structure**: Organized file hierarchy for efficient frontend browsing
-- **File Lifecycle**: Automatic cleanup of old files to prevent directory bloat
-- **Error Files**: Generate error.json files for frontend error handling
-- **Status Files**: Create status.json files to indicate system health and data freshness
+### Socket Communication & Message Management Strategy
+- **Real-time Streaming**: Live data pushed to subscribed clients immediately
+- **Message Queue**: Handle request-response patterns with unique message IDs
+- **Connection Management**: Automatic reconnection and connection status monitoring
+- **Data Subscriptions**: Symbol-based subscriptions for real-time market data
+- **Error Messages**: Generate error responses for failed data requests
+- **Status Updates**: Broadcast system health and data freshness information
 
 ## Architecture Patterns
 - **Service Layer Architecture**: Business logic separated into dedicated service classes
@@ -98,13 +98,13 @@ This is a full-stack stock trading dashboard with independent frontend and backe
 
 ### Backend (Express.js/Node.js)
 - Keep service classes focused - delegate business logic appropriately
-- Use service classes for all business logic (DatabaseService, PolygonService, FTPService)
-- **NO HTTP Controllers**: Remove REST API controllers - frontend uses FTP only
+- Use service classes for all business logic (DatabaseService, PolygonService, SocketService)
+- **NO HTTP Controllers**: Remove REST API controllers - frontend uses Socket only
 - Use async/await for all database and API operations
-- **FTP-First Architecture**: All frontend communication through FTP file operations
-- Validate all data using Zod validators before file generation
-- **JSON File Format**: All data files generated in JSON format
-- **Error Handling**: Error information embedded in JSON file metadata or FTP responses
+- **Socket-First Architecture**: All frontend communication through WebSocket message operations
+- Validate all data using Zod validators before message generation
+- **JSON Message Format**: All data messages generated in JSON format
+- **Error Handling**: Error information embedded in JSON message metadata or socket responses
 
 ### Frontend (Angular)
 - Follow Angular style guide and best practices
@@ -113,9 +113,9 @@ This is a full-stack stock trading dashboard with independent frontend and backe
 - Use Angular services for state management and data access
 - Follow reactive programming patterns with RxJS
 - Use Angular Material for consistent UI components
-- **FTP-Only Data Access**: All backend communication through FTP service
+- **Socket-Only Data Access**: All backend communication through Socket service
 - **No HTTP Client**: Remove HttpClient usage for backend communication
-- **JSON Data Processing**: Parse and validate JSON files from FTP downloads
+- **JSON Data Processing**: Parse and validate JSON messages from socket communications
 
 ### Database Operations
 - Use proper TypeScript types for all database models
@@ -136,14 +136,14 @@ This is a full-stack stock trading dashboard with independent frontend and backe
 ### Backend Structure (BackEndExpressJS/src/)
 ```
 src/
-├── config/           # Configuration files (database.ts, polygon.ts, ftp.ts)
-├── generators/       # Data file generators (DataFileGenerator.ts) - replaces controllers
+├── config/           # Configuration files (database.ts, polygon.ts, socket.ts)
+├── generators/       # Data message generators (DataFileGenerator.ts) - replaces controllers
 ├── middleware/       # Express middleware (errorHandler.ts) - minimal usage
 ├── models/           # Database models (Trades.ts)
-├── services/         # Business logic services (DatabaseService.ts, PolygonService.ts, FTPService.ts)
+├── services/         # Business logic services (DatabaseService.ts, PolygonService.ts, SocketService.ts)
 ├── types/            # TypeScript type definitions (index.ts)
 ├── utils/            # Utility functions (logger.ts, validators.ts, db-init.ts)
-└── server.ts         # Main application entry point (FTP server only)
+└── server.ts         # Main application entry point (Socket server only)
 ```
 
 ### Frontend Structure (FrontEndAngular/src/app/)
@@ -155,7 +155,7 @@ src/app/
 │   ├── data-controls/  # Data control widgets
 │   └── dual-chart-display/ # Chart display components
 ├── services/         # Angular services
-│   ├── ftp.ts        # FTP client service (backend communication)
+│   ├── socket.ts     # Socket client service (backend communication)
 │   ├── stock-api.ts  # Stock data management service
 │   ├── chart.ts      # Chart management service
 │   └── chart-sync.ts # Chart synchronization service
@@ -173,7 +173,7 @@ src/app/
 - **Responsibilities**:
   - Execute parameterized SQL queries for stock data retrieval
   - Manage connection pooling and transaction handling
-  - Provide data access layer for FTP file generation
+  - Provide data access layer for socket message generation
   - Interface with PGAdmin-managed database schema
 
 ### PolygonService (Polygon.io WebSocket Interface)
@@ -189,27 +189,27 @@ src/app/
   - Handle connection failures, reconnection logic, and status updates
   - Transform all data to unified CreateTradeInput format for database storage
 
-### FTPService (Frontend Dashboard Interface)
+### SocketService (Frontend Dashboard Interface)
 - **Purpose**: Primary and ONLY communication channel with frontend dashboard
-- **Communication**: FTP protocol server using `ftp-srv`
+- **Communication**: WebSocket protocol server using `ws` library
 - **Responsibilities**:
-  - Start and manage FTP server on configured port
-  - Handle client authentication and file requests
-  - Generate and serve ALL data files in JSON format only
-  - Process frontend data requests through file operations
-  - Provide real-time and historical data access via file polling
+  - Start and manage WebSocket server on configured port (3001)
+  - Handle client authentication and message requests
+  - Generate and serve ALL data messages in JSON format only
+  - Process frontend data requests through socket message operations
+  - Provide real-time and historical data access via socket streaming
   - Handle all frontend communication - no HTTP endpoints needed
 
-### DataFileGenerator (FTP File Management)
-- **Purpose**: Generate JSON data files for FTP access (replaces REST controllers)
-- **Communication**: File system operations for FTP server
+### DataFileGenerator (Socket Message Management)
+- **Purpose**: Generate JSON data messages for socket communication (replaces REST controllers)
+- **Communication**: Socket message operations for frontend service
 - **Responsibilities**:
-  - Generate JSON data files based on database queries
+  - Generate JSON data messages based on database queries
   - Coordinate with DatabaseService for data retrieval
-  - Format ALL data in JSON for FTP file consumption
-  - Handle data processing errors in JSON file metadata
-  - Ensure consistent JSON structure for all data files
-  - Manage file lifecycle and cleanup for FTP directory
+  - Format ALL data in JSON for socket message consumption
+  - Handle data processing errors in JSON message metadata
+  - Ensure consistent JSON structure for all data messages
+  - Manage real-time data streaming for socket clients
 
 ## Environment Configuration
 Required environment variables in `.env`:
@@ -224,13 +224,12 @@ DB_USER=postgres
 DB_PASSWORD=your_password
 DB_NAME=stock_data
 
-# FTP Server
-FTP_PORT=20
-FTP_USER=admin
-FTP_PASS=admin
+# Socket Server
+SOCKET_PORT=3001
+FRONTEND_URL=http://localhost:4200
 
 # Application
-PORT=3000
+HTTP_PROXY_PORT=3002
 LOG_LEVEL=info
 ```
 
@@ -238,13 +237,12 @@ LOG_LEVEL=info
 
 ### Backend Dependencies (BackEndExpressJS/)
 #### Core Dependencies
-- `express`: Minimal web framework (FTP server host only)
+- `express`: Minimal web framework (health checks only)
 - `pg`: PostgreSQL client
-- `ws`: WebSocket client for Polygon.io
-- `ftp-srv`: FTP server implementation (PRIMARY frontend interface)
+- `ws`: WebSocket server and client implementation (PRIMARY frontend interface)
 - `winston`: Structured logging
 - `dotenv`: Environment variable management
-- `zod`: Runtime type validation for file generation
+- `zod`: Runtime type validation for message generation
 
 #### Development Dependencies
 - `typescript`: TypeScript compiler
@@ -258,8 +256,7 @@ LOG_LEVEL=info
 - `chart.js`: Chart rendering library
 - `ng2-charts`: Angular Chart.js wrapper
 - `chartjs-chart-financial`: Financial charting extensions
-- `basic-ftp`: FTP client for backend communication
-- `rxjs`: Reactive programming library
+- `rxjs`: Reactive programming library (WebSocket handling)
 - `date-fns`: Date manipulation utilities
 
 #### Development Dependencies
@@ -279,16 +276,15 @@ LOG_LEVEL=info
 
 ## API Communication Architecture
 
-### Database File Generation (PGAdmin/PostgreSQL)
-- **Purpose**: Generate JSON data files from PostgreSQL database queries
+### Database Message Generation (PGAdmin/PostgreSQL)
+- **Purpose**: Generate JSON data messages from PostgreSQL database queries
 - **Protocol**: Direct database connection via `pg` client
 - **Target Entity**: PostgreSQL database (accessible via PGAdmin)
-- **File Generation**:
-  - Generate files for stock data queries with naming convention:
-    - `SYMBOL-TIMEFRAME-STARTDATE-ENDDATE.json`
-    - Parameters: symbol, timeframe (1min, 5min, 1hour, 1day), startDate, endDate (ISO 8601)
-- **Data Flow**: Database → File Generator → FTP Directory → Frontend Dashboard
-- **File Format**: JSON with OHLCV data and metadata
+- **Message Generation**:
+  - Generate messages for stock data queries with parameters:
+    - symbol, timeframe (1min, 5min, 1hour, 1day), startDate, endDate (ISO 8601)
+- **Data Flow**: Database → Message Generator → Socket Server → Frontend Dashboard
+- **Message Format**: JSON with OHLCV data and metadata
 
 ### WebSocket Connection - Real-time Data Ingestion (Polygon.io)
 - **Purpose**: Real-time stock and trade data streaming from Polygon.io
@@ -308,18 +304,20 @@ LOG_LEVEL=info
 - **Connection Management**: Authentication, auto-reconnection (5s delay), error handling, status monitoring
 - **Subscription Management**: Dynamic symbol subscription for trades, quotes, and aggregates
 
-### FTP Communication - Primary Frontend Interface (Frontend Dashboard)
+### Socket Communication - Primary Frontend Interface (Frontend Dashboard)
 - **Purpose**: PRIMARY and ONLY communication channel between frontend and backend
-- **Protocol**: FTP (File Transfer Protocol)
+- **Protocol**: WebSocket (WS/WSS)
 - **Target Entity**: Angular Frontend Dashboard
 - **Features**:
-  - **LIST**: Show all available data files in directory
-  - **RETR**: Download data files in format: `SYMBOL-TIMEFRAME-STARTDATE-ENDDATE.json`
-  - **Real-time Access**: Frontend polls for new files or updated timestamps
-  - **Authentication**: Using FTP_USER and FTP_PASS credentials
-- **Data Flow**: Frontend Dashboard → FTP Client → FTP Server → JSON Data Files (ONLY)
-- **File Formats**: JSON only - ALL data communication in JSON format
-- **Request Handling**: Frontend requests data by downloading specific named files
+  - **LIST**: Request available data types and symbols
+  - **DOWNLOAD**: Request data with specific parameters (symbol, timeframe, dates)
+  - **STATUS**: Get server and system status information
+  - **SUBSCRIBE**: Subscribe to real-time data streams for specific symbols
+  - **Real-time Streaming**: Live data pushed to subscribed clients
+  - **Authentication**: Connection-based authentication and session management
+- **Data Flow**: Frontend Dashboard → Socket Client → Socket Server → JSON Data Messages (ONLY)
+- **Message Formats**: JSON only - ALL data communication in JSON format
+- **Request Handling**: Frontend requests data by sending structured socket messages
 
 ## Real-time Data Processing Patterns
 
@@ -344,23 +342,24 @@ LOG_LEVEL=info
 - **Performance Optimization**: Batch processing and connection pooling
 - **Data Integrity**: Unique constraints prevent duplicate aggregate records
 
-### Real-time File Generation
-- **Status Monitoring**: Generate status.json with live symbol availability and last update timestamp
-- **Demand-based Generation**: Create data files when requested via FTP
-- **Cache Management**: Implement file lifecycle management (24-hour retention)
-- **Error Files**: Generate error.json files for failed data requests
+### Real-time Socket Streaming
+- **Status Broadcasting**: Send status updates with live symbol availability and last update timestamp
+- **Demand-based Generation**: Create data messages when requested via socket
+- **Connection Management**: Handle client connections, disconnections, and reconnections
+- **Error Messages**: Send structured error responses for failed data requests
+- **Subscription Management**: Track client subscriptions for targeted real-time data delivery
 
 ## Error Handling
 - Use custom error middleware for consistent error responses
 - Log all errors with structured logging using Winston
-- Return appropriate HTTP status codes
+- Return appropriate socket error codes and JSON error messages
 - Never expose internal error details to clients
 - Implement graceful degradation for external service failures
 
 ## Logging Standards
 - Use Winston logger with configurable log levels
 - Structure logs with consistent fields: timestamp, level, message, metadata
-- Log all API requests and responses
+- Log all socket connections and message exchanges
 - Log WebSocket connection events and data processing
 - Separate error logs from general application logs
 
@@ -369,14 +368,14 @@ LOG_LEVEL=info
 - Implement proper indexing on frequently queried columns
 - Buffer WebSocket data to prevent memory issues
 - Use streaming for large data transfers
-- Implement rate limiting for API endpoints
+- Implement rate limiting for socket connections
 
 ## Security Guidelines
 - Validate all inputs using Zod schemas
 - Use environment variables for all sensitive data
 - Implement proper SQL injection prevention
-- Use HTTPS in production
-- Implement proper CORS configuration
+- Use WSS (secure WebSocket) in production
+- Implement proper CORS configuration for socket origins
 - Log security-related events
 
 ## Testing Guidelines
@@ -385,7 +384,7 @@ LOG_LEVEL=info
 - Test error scenarios and edge cases
 - Use Jest or similar testing framework
 - Maintain test coverage above 80%
-- Test WebSocket connection handling
+- Test WebSocket connection handling and message processing
 
 ## Common Patterns
 - Factory pattern for service instantiation (user preference)
@@ -416,42 +415,43 @@ LOG_LEVEL=info
 
 ### Backend Changes (BackEndExpressJS/)
 - Update TypeScript interfaces when modifying data structures
-- Add appropriate Zod validation for file generation processes
+- Add appropriate Zod validation for message generation processes
 - Update database schema migration scripts when adding new models
 - **Real-time Integration**: Test Polygon.io WebSocket subscriptions and data processing
 - **Event Processing**: Verify trade, quote, and aggregate event handling
-- Update environment variable documentation (especially POLYGON_API_KEY)
+- Update environment variable documentation (especially POLYGON_API_KEY and SOCKET_PORT)
 - Ensure proper error handling in all new code
 - Add structured logging for new features
-- **FTP-Only Architecture**: NO HTTP endpoints - all frontend communication via FTP
-- **JSON Files Only**: Generate only JSON files for frontend consumption
-- **File-Based Errors**: Embed error information in JSON file metadata or FTP status
-- **File Naming**: Maintain consistent naming convention for all generated files
-- **Real-time Monitoring**: Update status.json generation with live data metrics
+- **Socket-Only Architecture**: NO HTTP endpoints - all frontend communication via WebSocket
+- **JSON Messages Only**: Generate only JSON messages for frontend consumption
+- **Message-Based Errors**: Embed error information in JSON message metadata or socket error codes
+- **Message Naming**: Maintain consistent message structure for all socket communications
+- **Real-time Monitoring**: Update status message generation with live data metrics
 - **WebSocket Resilience**: Test connection failures and auto-reconnection scenarios
 
 ### Frontend Changes (FrontEndAngular/)
 - Update Angular components to follow standalone patterns when possible
 - Use Angular Material components for consistent UI
-- Implement proper error handling for FTP operations
+- Implement proper error handling for socket operations
 - Update chart configurations when adding new data types
-- Test FTP file download and parsing functionality
-- **FTP-Only Communication**: NO HTTP requests to backend - use FTP service only
-- **JSON Data Parsing**: Validate and parse JSON files from FTP downloads
-- **Chart Integration**: Ensure chart data is properly formatted from JSON files
+- Test socket message exchange and data parsing functionality
+- **Socket-Only Communication**: NO HTTP requests to backend - use Socket service only
+- **JSON Data Parsing**: Validate and parse JSON messages from socket communications
+- **Chart Integration**: Ensure chart data is properly formatted from JSON messages
 - **Responsive Design**: Test UI components across different screen sizes
-- **Error Display**: Show user-friendly error messages for FTP failures
+- **Error Display**: Show user-friendly error messages for socket failures
 
 ### Cross-Application Considerations
 - **Independence**: Ensure no direct dependencies between frontend and backend
-- **JSON Schema**: Maintain consistent JSON file structure across applications
-- **File Naming**: Keep consistent file naming convention for FTP transfers
+- **JSON Schema**: Maintain consistent JSON message structure across applications
+- **Message Protocol**: Keep consistent message format for socket communications
 - **Data Validation**: Validate JSON data on both generation (backend) and consumption (frontend)
-- **Environment Sync**: Ensure FTP configuration matches between applications
+- **Environment Sync**: Ensure socket configuration matches between applications
 
 ## Known Issues to Watch
 - WebSocket connection stability with Polygon.io
-- FTP port configuration (currently set to 20, ensure client compatibility)
+- Socket port configuration (currently set to 3001, ensure client compatibility)
 - Database connection pool exhaustion under high load
 - Memory usage with large WebSocket data streams
-- Environment variable synchronization between Docker and local development 
+- Environment variable synchronization between Docker and local development
+- Socket message queue management under high message volume 

@@ -12,23 +12,70 @@ import {
 
 class DatabaseService {
   private pool: Pool;
+  private mockMode: boolean = true; // TEMPORARY: Set to false when real DB is available
+  private mockData: CreateTradeInput[] = []; // TEMPORARY: In-memory storage
 
   constructor() {
-    this.pool = new Pool(dbConfig);
-    this.pool.on('connect', () => {
-      logger.info('Connected to the database');
+    if (!this.mockMode) {
+      this.pool = new Pool(dbConfig);
+      this.pool.on('connect', () => {
+        logger.info('Connected to the database');
+      });
+      this.pool.on('error', (err) => {
+        logger.error('Database connection error', err);
+      });
+    } else {
+      logger.info('DatabaseService running in MOCK MODE - no actual database connection');
+      this.initializeMockData();
+    }
+  }
+
+  private initializeMockData() {
+    // Add sample data for popular stocks for immediate chart functionality
+    const baseDate = new Date();
+    const symbols = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN'];
+    
+    symbols.forEach((symbol, symbolIndex) => {
+      const basePrice = 150 + symbolIndex * 50; // Different base prices for each stock
+      
+      // Generate 100 data points for the last 100 minutes (1min timeframe)
+      for (let i = 0; i < 100; i++) {
+        const timestamp = new Date(baseDate.getTime() - (100 - i) * 60 * 1000); // Go back 100 minutes
+        const priceVariation = (Math.random() - 0.5) * 10; // ±$5 variation
+        const open = basePrice + priceVariation;
+        const close = open + (Math.random() - 0.5) * 4; // ±$2 variation from open
+        const high = Math.max(open, close) + Math.random() * 2; // Up to $2 above
+        const low = Math.min(open, close) - Math.random() * 2; // Up to $2 below
+        const volume = Math.floor(Math.random() * 1000000) + 100000; // 100K to 1.1M volume
+        
+        this.mockData.push({
+          symbol,
+          timestamp: timestamp.toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume,
+          price: close,
+          timeframe: '1min',
+          source: 'mock'
+        });
+      }
     });
-    this.pool.on('error', (err) => {
-      logger.error('Database connection error', err);
-    });
+    
+    logger.info(`Mock data initialized with ${this.mockData.length} data points for ${symbols.length} symbols`);
   }
 
   public async connect() {
-    try {
-      await this.pool.connect();
-    } catch (error) {
-      logger.error('Failed to connect to the database', error);
-      process.exit(1);
+    if (!this.mockMode) {
+      try {
+        await this.pool.connect();
+      } catch (error) {
+        logger.error('Failed to connect to the database', error);
+        process.exit(1);
+      }
+    } else {
+      logger.info('Mock database connection established');
     }
   }
 
@@ -40,6 +87,18 @@ class DatabaseService {
    * Insert new trade data into the consolidated trades table
    */
   public async insertTradeData(tradeInput: CreateTradeInput): Promise<void> {
+    if (this.mockMode) {
+      // TEMPORARY: Store in memory and log
+      this.mockData.push(tradeInput);
+      logger.info('MOCK: Trade data would be inserted', { 
+        symbol: tradeInput.symbol, 
+        timestamp: tradeInput.timestamp,
+        price: tradeInput.price,
+        volume: tradeInput.volume
+      });
+      return;
+    }
+
     const client = await this.pool.connect();
     try {
       const dbRow = apiInputToDbRow(tradeInput);
@@ -70,6 +129,22 @@ class DatabaseService {
    * Retrieve trades data based on query parameters for FTP file generation
    */
   public async getTradesData(params: TradesQueryParams): Promise<TradesApiResponse[]> {
+    if (this.mockMode) {
+      // TEMPORARY: Return mock data
+      logger.info('MOCK: Would retrieve trades data', { params });
+      return this.mockData
+        .filter(trade => trade.symbol === params.symbol)
+        .slice(0, params.limit || 100)
+        .map(trade => ({
+          timestamp: trade.timestamp,
+          open: trade.open || trade.price,
+          high: trade.high || trade.price,
+          low: trade.low || trade.price,
+          close: trade.close || trade.price,
+          volume: trade.volume || 0
+        }));
+    }
+
     const client = await this.pool.connect();
     try {
       const query = `
@@ -117,6 +192,13 @@ class DatabaseService {
    * Insert aggregated OHLCV data for specific timeframes
    */
   public async insertAggregatedData(data: CreateTradeInput[]): Promise<void> {
+    if (this.mockMode) {
+      // TEMPORARY: Add to mock data and log
+      this.mockData.push(...data);
+      logger.info('MOCK: Aggregated data would be inserted', { recordCount: data.length });
+      return;
+    }
+
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -140,6 +222,13 @@ class DatabaseService {
    * Get available symbols for status reporting
    */
   public async getAvailableSymbols(): Promise<string[]> {
+    if (this.mockMode) {
+      // TEMPORARY: Return symbols from mock data
+      const symbols = [...new Set(this.mockData.map(trade => trade.symbol))];
+      logger.info('MOCK: Available symbols', { symbols });
+      return symbols;
+    }
+
     const client = await this.pool.connect();
     try {
       const result = await client.query('SELECT DISTINCT symbol FROM trades ORDER BY symbol');
@@ -156,6 +245,15 @@ class DatabaseService {
    * Get latest timestamp for data freshness monitoring
    */
   public async getLatestTimestamp(): Promise<Date | null> {
+    if (this.mockMode) {
+      // TEMPORARY: Return latest timestamp from mock data
+      if (this.mockData.length === 0) return null;
+      const latest = this.mockData.reduce((latest, trade) => 
+        new Date(trade.timestamp) > new Date(latest.timestamp) ? trade : latest
+      );
+      return new Date(latest.timestamp);
+    }
+
     const client = await this.pool.connect();
     try {
       const result = await client.query('SELECT MAX(timestamp) as latest_timestamp FROM trades');

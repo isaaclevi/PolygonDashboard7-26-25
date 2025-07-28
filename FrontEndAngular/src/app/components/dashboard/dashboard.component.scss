@@ -2,28 +2,111 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background-color: #1a1a1a;
-  color: #fff;
-}
-
-.dashboard-header {
   padding: 1rem;
-  text-align: center;
-  border-bottom: 1px solid #333;
+  background-color: var(--background-dark, #1a1a1a);
+  color: var(--text-light, #ffffff);
 }
 
-.dashboard-main {
+/* Auto-refresh status bar */
+.refresh-status-bar {
   display: flex;
-  flex: 1;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  backdrop-filter: blur(10px);
 }
 
-.controls-container {
-  width: 250px;
-  padding: 1rem;
-  border-right: 1px solid #333;
+.status-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-.chart-container {
+.status-indicator {
+  font-size: 1rem;
+  
+  &.active {
+    animation: pulse 2s infinite;
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.status-text {
+  font-weight: 500;
+  color: var(--text-primary, #ffffff);
+}
+
+.last-refresh, .next-refresh {
+  color: var(--text-secondary, #aaaaaa);
+  font-size: 0.8rem;
+}
+
+.refresh-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.refresh-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.875rem;
+  color: var(--text-light, #ffffff);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  &.manual {
+    background: rgba(0, 122, 255, 0.2);
+    border-color: rgba(0, 122, 255, 0.4);
+    
+    &:hover {
+      background: rgba(0, 122, 255, 0.3);
+    }
+  }
+  
+  &.toggle {
+    background: rgba(255, 149, 0, 0.2);
+    border-color: rgba(255, 149, 0, 0.4);
+    
+    &:hover {
+      background: rgba(255, 149, 0, 0.3);
+    }
+  }
+}
+
+/* Existing styles */
+.chart-section {
   flex: 1;
-  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.no-data-message {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex: 1;
+  color: var(--text-secondary, #aaaaaa);
+  font-size: 1.1rem;
+  
+  p {
+    text-align: center;
+    opacity: 0.7;
+  }
 }

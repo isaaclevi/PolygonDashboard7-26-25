@@ -1,13 +1,39 @@
 <div class="dashboard-container">
-  <header class="dashboard-header">
-    <h1>Stock Data Dashboard</h1>
-  </header>
-  <main class="dashboard-main">
-    <div class="controls-container">
-      <app-data-controls></app-data-controls>
+  <!-- Auto-refresh status bar -->
+  <div class="refresh-status-bar" *ngIf="getRefreshStatus() | async as refreshStatus">
+    <div class="status-info">
+      <span class="status-indicator" [class.active]="refreshStatus.isEnabled">
+        {{ refreshStatus.isEnabled ? '🔄' : '⏸️' }}
+      </span>
+      <span class="status-text">
+        {{ refreshStatus.isEnabled ? 'Auto-refresh active' : 'Auto-refresh paused' }}
+      </span>
+      <span class="last-refresh" *ngIf="refreshStatus.lastRefresh">
+        Last: {{ refreshStatus.lastRefresh | date:'HH:mm:ss' }}
+      </span>
+      <span class="next-refresh" *ngIf="refreshStatus.nextRefresh && refreshStatus.isEnabled">
+        Next: {{ refreshStatus.nextRefresh | date:'HH:mm:ss' }}
+      </span>
     </div>
-    <div class="chart-container" *ngIf="chartData">
-      <app-chart-container [chartData]="chartData" [chartColors]="chartColors"></app-chart-container>
+    <div class="refresh-controls">
+      <button class="refresh-btn manual" (click)="refreshCurrentData()" title="Refresh Now">
+        🔄
+      </button>
+      <button class="refresh-btn toggle" (click)="toggleAutoRefresh()" 
+              [title]="refreshStatus.isEnabled ? 'Pause Auto-refresh' : 'Start Auto-refresh'">
+        {{ refreshStatus.isEnabled ? '⏸️' : '▶️' }}
+      </button>
     </div>
-  </main>
+  </div>
+
+  <!-- Existing dashboard content -->
+  <app-data-controls (getData)="onGetData($event)"></app-data-controls>
+  
+  <div class="chart-section" *ngIf="chartData">
+    <app-chart-container [chartData]="chartData" [chartColors]="chartColors"></app-chart-container>
+  </div>
+  
+  <div class="no-data-message" *ngIf="!chartData">
+    <p>Select a stock and time period to view chart data</p>
+  </div>
 </div>

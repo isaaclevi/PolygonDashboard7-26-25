@@ -193,6 +193,16 @@ class DataFileGenerator {
       const availableSymbols = await DatabaseService.getAvailableSymbols();
       const lastUpdate = await DatabaseService.getLatestTimestamp();
 
+      // Check if tickers.json exists to include its timestamp
+      const tickersPath = path.join(this.outputDirectory, 'tickers.json');
+      let tickerFileTimestamp = null;
+      try {
+        const tickerStats = await fs.stat(tickersPath);
+        tickerFileTimestamp = tickerStats.mtime.toISOString();
+      } catch {
+        // File doesn't exist yet
+      }
+
       const status = {
         system: 'StockTradingBackend',
         status: 'healthy',
@@ -204,7 +214,9 @@ class DataFileGenerator {
         },
         dataFreshness: {
           lastUpdate: lastUpdate?.toISOString() || null,
-          availableSymbols: availableSymbols
+          availableSymbols: availableSymbols,
+          tickerFileLastUpdated: tickerFileTimestamp,
+          tickerFileGeneration: new Date().toISOString() // Always update this to trigger change detection
         }
       };
 
@@ -302,6 +314,16 @@ class DataFileGenerator {
         sicDescription: ticker.sic_description
       }));
 
+      // Add manual fallback symbols for popular tickers that might be missing from Polygon.io
+      const manualSymbols = this.getManualFallbackSymbols();
+      const polygonSymbols = new Set(transformedTickers.map(t => t.symbol));
+      
+      // Add symbols that are not already present from Polygon.io
+      const additionalSymbols = manualSymbols.filter(manual => !polygonSymbols.has(manual.symbol));
+      const finalTickers = [...transformedTickers, ...additionalSymbols];
+
+      logger.info(`Combined ticker data: ${transformedTickers.length} from Polygon.io + ${additionalSymbols.length} manual fallback = ${finalTickers.length} total`);
+
       // Create the JSON file structure
       const fileData = {
         metadata: {
@@ -309,11 +331,13 @@ class DataFileGenerator {
           source: 'polygon.io',
           market: market,
           activeOnly: activeOnly,
-          totalCount: transformedTickers.length,
+          totalCount: finalTickers.length,
+          polygonCount: transformedTickers.length,
+          manualCount: additionalSymbols.length,
           apiEndpoint: '/v3/reference/tickers',
-          version: '1.0'
+          version: '1.1'
         },
-        tickers: transformedTickers
+        tickers: finalTickers
       };
 
       // Write the file
@@ -322,9 +346,14 @@ class DataFileGenerator {
       
       await fs.writeFile(filePath, JSON.stringify(fileData, null, 2), 'utf8');
       
-      logger.info(`Successfully generated ${fileName} with ${transformedTickers.length} tickers`, {
+      // Update status file after ticker generation to trigger frontend refresh
+      await this.generateStatusFile();
+      
+      logger.info(`Successfully generated ${fileName} with ${finalTickers.length} tickers`, {
         fileName,
-        tickerCount: transformedTickers.length,
+        tickerCount: finalTickers.length,
+        polygonTickers: transformedTickers.length,
+        manualTickers: additionalSymbols.length,
         market,
         activeOnly
       });
@@ -335,6 +364,112 @@ class DataFileGenerator {
       logger.error('Error generating tickers file', { error });
       throw error;
     }
+  }
+
+  /**
+   * Manual fallback symbols for popular tickers that might be missing from Polygon.io
+   * This ensures the dropdown includes symbols users expect to see even if they're not
+   * available in the Polygon.io API results
+   */
+  private getManualFallbackSymbols(): any[] {
+    return [
+      {
+        symbol: 'VXX',
+        name: 'iPath Series B S&P 500 VIX Short-Term Futures ETN',
+        description: 'VIX Short-Term Futures ETN (subject to reverse splits)',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'CBOE',
+        active: true,
+        currency: 'USD',
+        type: 'ETN',
+        listDate: '2009-01-30'
+      },
+      {
+        symbol: 'UVXY',
+        name: 'ProShares Ultra VIX Short-Term Futures ETF',
+        description: '1.5x Leveraged VIX Short-Term Futures ETF',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'CBOE',
+        active: true,
+        currency: 'USD',
+        type: 'ETF',
+        listDate: '2011-10-03'
+      },
+      {
+        symbol: 'VIXY',
+        name: 'ProShares VIX Short-Term Futures ETF',
+        description: 'VIX Short-Term Futures ETF (1x exposure)',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'CBOE',
+        active: true,
+        currency: 'USD',
+        type: 'ETF',
+        listDate: '2011-01-03'
+      },
+      {
+        symbol: 'TVIX',
+        name: 'VelocityShares Daily 2x VIX Short-Term ETN',
+        description: '2x Leveraged VIX Short-Term Futures ETN (delisted but popular)',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'NASDAQ',
+        active: false,
+        currency: 'USD',
+        type: 'ETN',
+        listDate: '2010-11-30'
+      },
+      {
+        symbol: 'SPXS',
+        name: 'Direxion Daily S&P 500 Bear 3X Shares',
+        description: '3x Inverse S&P 500 ETF',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'NYSE',
+        active: true,
+        currency: 'USD',
+        type: 'ETF',
+        listDate: '2008-11-05'
+      },
+      {
+        symbol: 'SPXU',
+        name: 'ProShares UltraPro Short S&P500',
+        description: '3x Inverse S&P 500 ETF',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'NYSE',
+        active: true,
+        currency: 'USD',
+        type: 'ETF',
+        listDate: '2009-06-25'
+      },
+      {
+        symbol: 'SQQQ',
+        name: 'ProShares UltraPro Short QQQ',
+        description: '3x Inverse NASDAQ-100 ETF',
+        sector: 'ETF',
+        market: 'stocks',
+        exchange: 'NASDAQ',
+        active: true,
+        currency: 'USD',
+        type: 'ETF',
+        listDate: '2010-02-09'
+      },
+      {
+        symbol: 'WULF',
+        name: 'TeraWulf Inc.',
+        description: 'Bitcoin mining company with environmentally clean facilities',
+        sector: 'Technology',
+        market: 'stocks',
+        exchange: 'NASDAQ',
+        active: true,
+        currency: 'USD',
+        type: 'CS',
+        listDate: '2021-02-08'
+      }
+    ];
   }
 
   /**
@@ -459,6 +594,155 @@ class DataFileGenerator {
 
     } catch (error) {
       logger.error('Error generating ticker index', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Generate trades data as JSON (for socket communication)
+   */
+  async generateTradesData(params: FileGenerationParams): Promise<TradeDataResponse> {
+    try {
+      // Validate input parameters
+      const validatedParams = FileGenerationParamsSchema.parse(params);
+      
+      logger.info('Generating trades data for socket', { params: validatedParams });
+
+      // Convert to TradesQueryParams format with Date objects
+      const queryParams = {
+        symbol: validatedParams.symbol,
+        timeframe: validatedParams.timeframe,
+        startDate: new Date(validatedParams.startDate),
+        endDate: new Date(validatedParams.endDate)
+      };
+
+      // Query database for trades data
+      const tradesData = await DatabaseService.getTradesData(queryParams);
+
+      // Format response with metadata
+      const response: TradeDataResponse = {
+        metadata: {
+          symbol: validatedParams.symbol,
+          timeframe: validatedParams.timeframe,
+          startDate: validatedParams.startDate,
+          endDate: validatedParams.endDate,
+          generatedAt: new Date().toISOString(),
+          recordCount: tradesData.length
+        },
+        data: tradesData
+      };
+
+      logger.info('Trades data generated for socket', { recordCount: tradesData.length });
+      return response;
+
+    } catch (error) {
+      logger.error('Failed to generate trades data for socket', { error, params });
+      throw error;
+    }
+  }
+
+  /**
+   * Generate status data as JSON (for socket communication)
+   */
+  async generateStatusData(): Promise<any> {
+    try {
+      // Get real data from database
+      const availableSymbols = await DatabaseService.getAvailableSymbols();
+      const lastUpdate = await DatabaseService.getLatestTimestamp();
+
+      const status = {
+        system: 'StockTradingBackend',
+        status: 'healthy',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: 'connected',
+          socket: 'running',
+          polygon: 'subscribed'
+        },
+        dataFreshness: {
+          lastUpdate: lastUpdate?.toISOString() || null,
+          availableSymbols: availableSymbols,
+          generatedAt: new Date().toISOString()
+        }
+      };
+
+      logger.info('Status data generated for socket', { symbolCount: availableSymbols.length });
+      return status;
+
+    } catch (error) {
+      logger.error('Failed to generate status data for socket', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Generate tickers data as JSON (for socket communication)
+   */
+  async generateTickersData(): Promise<any> {
+    try {
+      logger.info('Generating tickers data for socket');
+
+      // Fetch all tickers from Polygon.io
+      const tickers = await PolygonService.fetchAllTickers('stocks', true);
+
+      // Transform ticker data for frontend consumption
+      const transformedTickers = tickers.map(ticker => ({
+        symbol: ticker.ticker,
+        name: ticker.name || ticker.ticker,
+        description: ticker.description || `${ticker.name} (${ticker.ticker})`,
+        sector: this.deriveSectorFromDescription(ticker.description, ticker.sic_description),
+        market: ticker.market,
+        exchange: ticker.primary_exchange,
+        active: ticker.active,
+        currency: ticker.currency_name || 'USD',
+        marketCap: ticker.market_cap,
+        listDate: ticker.list_date,
+        type: ticker.type,
+        website: ticker.homepage_url,
+        logo: ticker.branding?.logo_url,
+        icon: ticker.branding?.icon_url,
+        employees: ticker.total_employees,
+        address: ticker.address ? {
+          street: ticker.address.address1,
+          city: ticker.address.city,
+          state: ticker.address.state,
+          zipCode: ticker.address.postal_code
+        } : undefined,
+        sicCode: ticker.sic_code,
+        sicDescription: ticker.sic_description
+      }));
+
+      // Add manual fallback symbols for popular tickers
+      const manualSymbols = this.getManualFallbackSymbols();
+      const polygonSymbols = new Set(transformedTickers.map(t => t.symbol));
+      
+      // Add symbols that are not already present from Polygon.io
+      const additionalSymbols = manualSymbols.filter(manual => !polygonSymbols.has(manual.symbol));
+      const finalTickers = [...transformedTickers, ...additionalSymbols];
+
+      logger.info(`Tickers data generated for socket: ${transformedTickers.length} from Polygon.io + ${additionalSymbols.length} manual = ${finalTickers.length} total`);
+
+      // Create the JSON response structure
+      const response = {
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          source: 'polygon.io',
+          market: 'stocks',
+          activeOnly: true,
+          totalCount: finalTickers.length,
+          polygonCount: transformedTickers.length,
+          manualCount: additionalSymbols.length,
+          apiEndpoint: '/v3/reference/tickers',
+          version: '1.1'
+        },
+        tickers: finalTickers
+      };
+
+      logger.info('Tickers data generated for socket', { tickerCount: finalTickers.length });
+      return response;
+
+    } catch (error) {
+      logger.error('Failed to generate tickers data for socket', { error });
       throw error;
     }
   }

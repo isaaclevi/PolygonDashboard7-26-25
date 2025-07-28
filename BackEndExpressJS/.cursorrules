@@ -152,7 +152,7 @@ FTP_USER=admin
 FTP_PASS=admin
 
 # Application
-PORT=3000
+PORT=3001
 LOG_LEVEL=info
 ```
 

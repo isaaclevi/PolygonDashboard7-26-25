@@ -1,11 +1,8 @@
-import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
-import { Chart, registerables } from 'chart.js';
+import { Component, Input, OnChanges, SimpleChanges, AfterViewInit } from '@angular/core';
+import { Chart } from 'chart.js';
 import { ChartService } from '../../../services/chart';
 import { DualChartData } from '../../../models/stock-data.interface';
 import { ChartColorConfig } from '../../../models/chart-config.interface';
-import 'chartjs-adapter-date-fns';
-
-Chart.register(...registerables);
 
 @Component({
   selector: 'app-price-chart',
@@ -13,19 +10,47 @@ Chart.register(...registerables);
   styleUrls: [],
   standalone: true
 })
-export class PriceChartComponent implements OnChanges {
+export class PriceChartComponent implements OnChanges, AfterViewInit {
   @Input() chartData!: DualChartData;
   @Input() chartColors!: ChartColorConfig;
   public chart: Chart | undefined;
+  private viewInitialized = false;
 
   constructor(private chartService: ChartService) { }
 
+  ngAfterViewInit(): void {
+    this.viewInitialized = true;
+    this.createChart();
+  }
+
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['chartData'] && this.chartData) {
+    if (changes['chartData'] && this.chartData && this.viewInitialized) {
+      this.createChart();
+    }
+  }
+
+  private createChart(): void {
+    if (!this.chartData || !this.chartColors) {
+      console.log('Price chart: Missing data or colors, skipping chart creation');
+      return;
+    }
+
+    try {
       if (this.chart) {
         this.chart.destroy();
       }
-      this.chart = this.chartService.createPriceChart('priceChart', this.chartData, this.chartColors);
+      
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        try {
+          this.chart = this.chartService.createPriceChart('priceChart', this.chartData, this.chartColors);
+          console.log('Price chart created successfully');
+        } catch (error) {
+          console.error('Error creating price chart:', error);
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error in price chart creation process:', error);
     }
   }
 }

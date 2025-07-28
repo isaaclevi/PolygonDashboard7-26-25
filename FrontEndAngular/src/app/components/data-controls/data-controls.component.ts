@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output } from '@angular/core';
+import { Component, EventEmitter, Output, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { StockSelectorComponent, StockSelectionEvent } from '../stock-selector/stock-selector.component';
 
@@ -9,7 +9,7 @@ import { StockSelectorComponent, StockSelectionEvent } from '../stock-selector/s
   standalone: true,
   imports: [FormsModule, StockSelectorComponent]
 })
-export class DataControlsComponent {
+export class DataControlsComponent implements OnInit {
   @Output() getData = new EventEmitter<{ symbol: string, timeframe: string, startDate: string, endDate: string }>();
 
   symbol = 'AAPL';
@@ -17,6 +17,8 @@ export class DataControlsComponent {
   startDate = '2024-01-01';
   endDate = '2024-01-02';
   selectedStockInfo: StockSelectionEvent | null = null;
+  
+  private initialDataRequested = false;
 
   constructor() {
     // Set default dates to match sample data
@@ -25,34 +27,36 @@ export class DataControlsComponent {
     yesterday.setDate(yesterday.getDate() - 1);
     
     // Format dates as YYYY-MM-DD for input[type="date"]
-    this.startDate = '2024-01-01';
-    this.endDate = '2024-01-02';
+    this.endDate = today.toISOString().split('T')[0];
+    this.startDate = yesterday.toISOString().split('T')[0];
+  }
+
+  ngOnInit() {
+    console.log('🎛️ Data Controls: Component initialized, waiting for stock selection...');
   }
 
   onStockSelected(stockInfo: StockSelectionEvent): void {
+    console.log('📈 Data Controls: Stock selected:', stockInfo);
     this.symbol = stockInfo.symbol;
     this.selectedStockInfo = stockInfo;
-    console.log('Stock selected:', stockInfo);
+    
+    // Automatically request data for the initially selected stock
+    if (!this.initialDataRequested) {
+      console.log('🚀 Data Controls: Requesting initial data for selected stock...');
+      this.onGetData();
+      this.initialDataRequested = true;
+    }
   }
 
-  onGetData() {
-    if (!this.symbol || !this.timeframe || !this.startDate || !this.endDate) {
-      console.warn('Missing required data for stock request');
-      return;
-    }
-
-    console.log('Requesting stock data:', {
+  onGetData(): void {
+    const requestParams = {
       symbol: this.symbol,
       timeframe: this.timeframe,
       startDate: this.startDate,
       endDate: this.endDate
-    });
-
-    this.getData.emit({
-      symbol: this.symbol,
-      timeframe: this.timeframe,
-      startDate: this.startDate,
-      endDate: this.endDate
-    });
+    };
+    
+    console.log('📊 Data Controls: Emitting data request:', requestParams);
+    this.getData.emit(requestParams);
   }
 }

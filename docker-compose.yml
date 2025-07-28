@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: stock-trading-dashboard
     ports:
-      - '3001:3000'    # HTTP server (Angular + API)
+      - '3001:3001'    # HTTP server (Angular + API)
       - '20:20'        # FTP server (primary data interface)
     depends_on:
       - postgres
@@ -23,11 +23,11 @@ services:
       - DB_NAME=${DB_NAME:-stock_data}
       
       # Server Configuration
-      - PORT=3000
+      - PORT=3001
       - FTP_PORT=20
       - FTP_USER=${FTP_USER:-admin}
       - FTP_PASS=${FTP_PASS:-admin}
-      - HTTP_PROXY_PORT=3000
+      - HTTP_PROXY_PORT=3001
       
       # Application Configuration
       - NODE_ENV=production
@@ -40,7 +40,7 @@ services:
       - stock-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3

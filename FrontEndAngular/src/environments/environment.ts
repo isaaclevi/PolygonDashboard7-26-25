@@ -1,27 +1,36 @@
 export const environment = {
   production: false,
-  // Base API URL for HTTP communication
-  apiUrl: 'http://localhost:3001',
   
-  // HTTP proxy configuration (preferred for browser compatibility)
-  httpProxy: {
-    enabled: true,
-    baseUrl: 'http://localhost:3001/ftp-proxy',
-    listUrl: 'http://localhost:3001/ftp-proxy'
-  },
-  
-  // FTP configuration (fallback for direct FTP access)
-  ftpConfig: {
+  // Socket configuration for direct WebSocket communication with backend
+  socketConfig: {
     host: 'localhost',
-    port: 20, // Updated to match backend FTP port
-    user: 'admin',
-    password: 'admin'
+    port: 3001, // Socket port as configured in backend
+    path: '/data-stream'
   },
+  
+  // Health monitoring (read-only, not for data access)
+  healthCheckUrl: 'http://localhost:3001/health',
   
   // Application settings
-  defaultStocks: ['AAPL', 'GOOGL', 'MSFT', 'TSLA'],
-  chartRefreshInterval: 30000, // 30 seconds for development
+  defaultStocks: ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'SVIX'],
   
-  // Data source priority: 'http-proxy' | 'ftp' | 'both'
-  dataSourceMode: 'http-proxy'
+  // Auto-refresh configuration
+  chartRefreshInterval: 3600000, // 1 hour (3,600,000 ms) for chart data
+  tickerRefreshInterval: 3600000, // 1 hour for ticker data  
+  statusCheckInterval: 300000, // 5 minutes for backend status (more frequent for health monitoring)
+  
+  // Auto-refresh behavior
+  autoRefresh: {
+    enabled: true, // Enable by default
+    enableOnStartup: true, // Start auto-refresh when dashboard loads
+    retryOnFailure: true, // Retry after failures
+    maxRetries: 5, // Maximum retry attempts before giving up
+    backoffMultiplier: 1.5, // Exponential backoff for retries
+  },
+  
+  // Development settings
+  debug: {
+    socketVerbose: false, // Set to true for WebSocket debugging
+    enableConsoleLogging: true
+  }
 };

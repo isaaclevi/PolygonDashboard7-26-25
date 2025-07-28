@@ -1,27 +1,27 @@
 import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { StockData, DualChartData } from '../models/stock-data.interface';
-import { FtpService } from './ftp';
+import { SocketService } from './socket';
 
 @Injectable({
   providedIn: 'root'
 })
 export class StockApiService {
 
-  constructor(private ftpService: FtpService) { }
+  constructor(private socketService: SocketService) { }
 
   /**
-   * Gets stock data from FTP server (replacing HTTP endpoint).
-   * This maintains FTP-first architecture while providing the same interface.
+   * Gets stock data from Socket service (replacing HTTP endpoint).
+   * This maintains socket-first architecture while providing the same interface.
    */
   getStockData(symbol: string, timeframe: string, startDate: string, endDate: string): Observable<StockData[]> {
     return new Observable(observer => {
-      this.ftpService.downloadStockData(symbol, timeframe, startDate, endDate)
+      this.socketService.downloadStockData(symbol, timeframe, startDate, endDate)
         .then(response => {
           if (response.error) {
             observer.error(new Error(response.error.message));
           } else {
-            // Transform the FTP response data to match StockData interface
+            // Transform the Socket response data to match StockData interface
             const stockData: StockData[] = response.data.map((item: any) => ({
               timestamp: item.timestamp,
               open: item.open,
@@ -41,10 +41,10 @@ export class StockApiService {
   }
 
   /**
-   * Gets stock data using Observable pattern from FTP service.
+   * Gets stock data using Observable pattern from Socket service.
    */
   getStockDataObservable(symbol: string, timeframe: string, startDate: string, endDate: string): Observable<StockData[]> {
-    return this.ftpService.downloadStockDataObservable(symbol, timeframe, startDate, endDate)
+    return this.socketService.downloadStockDataObservable(symbol, timeframe, startDate, endDate)
       .pipe(
         // Transform response to StockData array
         // Handle errors in component
@@ -56,7 +56,7 @@ export class StockApiService {
    */
   getDualChartData(symbol: string, timeframe: string, startDate: string, endDate: string): Observable<DualChartData> {
     return new Observable(observer => {
-      this.ftpService.downloadStockData(symbol, timeframe, startDate, endDate)
+      this.socketService.downloadStockData(symbol, timeframe, startDate, endDate)
         .then(response => {
           if (response.error) {
             observer.error(new Error(response.error.message));
@@ -98,11 +98,11 @@ export class StockApiService {
   }
 
   /**
-   * Lists available stock symbols from FTP server.
+   * Lists available stock symbols from Socket service.
    */
   getAvailableSymbols(): Observable<string[]> {
     return new Observable(observer => {
-      this.ftpService.listFiles()
+      this.socketService.listFiles()
         .then(files => {
           // Extract unique symbols from file names (format: SYMBOL-TIMEFRAME-STARTDATE-ENDDATE.json)
           const symbols = new Set<string>();
@@ -122,9 +122,9 @@ export class StockApiService {
   }
 
   /**
-   * Gets server status from FTP server.
+   * Gets server status from Socket service.
    */
   getStatus(): Observable<any> {
-    return this.ftpService.downloadFileObservable('status.json');
+    return this.socketService.downloadFileObservable('status.json');
   }
 }

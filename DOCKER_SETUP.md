@@ -10,7 +10,7 @@ This guide explains how to run both the Angular frontend and Express.js backend 
 │  ┌─────────────────┐              ┌─────────────────────┐   │
 │  │  Angular Frontend│              │  Express.js Backend  │   │
 │  │  (Static Files)  │              │                     │   │
-│  │                 │              │  • HTTP Server :3000│   │
+│  │                 │              │  • HTTP Server :3001│   │
 │  │  Served via     │◄─────────────┤  • FTP Server :20   │   │
 │  │  Express Static │              │  • Database Client  │   │
 │  │                 │              │  • Polygon.io WS    │   │
@@ -55,8 +55,8 @@ docker-compose up --build -d
 ```
 
 ### 4. **Access the Application**
-- **Frontend Dashboard**: http://localhost:3000
-- **API Health Check**: http://localhost:3000/health
+- **Frontend Dashboard**: http://localhost:3001
+- **API Health Check**: http://localhost:3001/health
 - **Direct FTP Access**: ftp://admin:password@localhost:20
 - **Database**: localhost:5432
 
@@ -68,9 +68,9 @@ The frontend communicates with the backend through **HTTP proxy endpoints** for 
 
 ```typescript
 // HTTP Proxy Mode (Preferred)
-GET http://localhost:3000/ftp-proxy/tickers.json
-GET http://localhost:3000/ftp-proxy/AAPL-1min-2024-01-01-2024-01-02.json
-GET http://localhost:3000/ftp-proxy        // List files
+GET http://localhost:3001/ftp-proxy/tickers.json
+GET http://localhost:3001/ftp-proxy/AAPL-1min-2024-01-01-2024-01-02.json
+GET http://localhost:3001/ftp-proxy        // List files
 
 // Direct FTP (Alternative)
 FTP ftp://admin:password@localhost:20/tickers.json
@@ -79,7 +79,7 @@ FTP ftp://admin:password@localhost:20/tickers.json
 ## 🔧 Configuration Details
 
 ### Port Mapping
-- **3000**: HTTP server (Angular app + API endpoints)
+- **3001**: HTTP server (Angular app + API endpoints)
 - **20**: FTP server (primary data interface)
 - **5432**: PostgreSQL database
 
@@ -109,13 +109,13 @@ npm run start  # http://localhost:4200
 
 # Backend dev server (separate)
 cd BackEndExpressJS
-npm run dev    # http://localhost:3000
+npm run dev    # http://localhost:3001
 ```
 
 ### Production Mode (Docker)
 ```bash
 # Unified container
-docker-compose up --build  # http://localhost:3000
+docker-compose up --build  # http://localhost:3001
 ```
 
 ## 📋 Available Services
@@ -154,7 +154,7 @@ docker-compose logs -f postgres
 docker-compose ps
 
 # Application health
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 
 # Database connection
 docker-compose exec postgres pg_isready -U postgres
@@ -183,7 +183,7 @@ ftp localhost 20
 1. **Port Already in Use**
    ```bash
    # Find and kill process using port
-   lsof -ti:3000 | xargs kill -9
+   lsof -ti:3001 | xargs kill -9
    lsof -ti:20 | xargs kill -9
    ```
 

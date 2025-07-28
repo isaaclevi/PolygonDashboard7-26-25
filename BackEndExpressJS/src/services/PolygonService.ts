@@ -53,6 +53,8 @@ export interface PolygonTickersResponse {
 class PolygonService {
   private ws!: WebSocket;
   private restApiBaseUrl = 'https://api.polygon.io';
+  private seenSymbols = new Set<string>(); // Track symbols we've seen
+  private lastTickerUpdate = 0; // Timestamp of last ticker file update trigger
 
   constructor() {
     this.connect();
@@ -77,11 +79,17 @@ class PolygonService {
 
     this.ws.on('close', () => {
       logger.info('Disconnected from Polygon.io WebSocket. Reconnecting...');
-      setTimeout(() => this.connect(), 5000);
+      // Increase reconnection delay to avoid hitting connection limits
+      setTimeout(() => this.connect(), 30000); // 30 seconds instead of 5
     });
 
     this.ws.on('error', (error) => {
       logger.error('Polygon.io WebSocket error', error);
+      // If we hit connection limits, wait longer before reconnecting
+      if (error.message && error.message.includes('Maximum number of websocket connections exceeded')) {
+        logger.warn('Connection limit reached, waiting 2 minutes before reconnecting...');
+        setTimeout(() => this.connect(), 120000); // 2 minutes
+      }
     });
   }
 
@@ -236,6 +244,9 @@ class PolygonService {
   private async handleMessage(message: any) {
     try {
       if (message.ev === 'T') {
+        // Check for new symbols and trigger ticker update if needed
+        await this.checkForNewSymbol(message.sym);
+
         // Trade data - store as individual trade record
         const tradeData: CreateTradeInput = {
           trade_id: message.i?.toString(),
@@ -257,6 +268,9 @@ class PolygonService {
         logger.debug('Trade data processed', { symbol: message.sym, price: message.p });
 
       } else if (message.ev === 'Q') {
+        // Check for new symbols and trigger ticker update if needed
+        await this.checkForNewSymbol(message.sym);
+
         // Quote data - store as current market data
         const quoteData: CreateTradeInput = {
           symbol: message.sym,
@@ -275,6 +289,9 @@ class PolygonService {
         logger.debug('Quote data processed', { symbol: message.sym, bid: message.bp, ask: message.ap });
 
       } else if (message.ev === 'AM') {
+        // Check for new symbols and trigger ticker update if needed
+        await this.checkForNewSymbol(message.sym);
+
         // Aggregate Minute data - store with timeframe
         const aggregateData: CreateTradeInput = {
           symbol: message.sym,
@@ -298,6 +315,71 @@ class PolygonService {
     } catch (error) {
       logger.error('Error processing Polygon.io message', { error, message });
     }
+  }
+
+  /**
+   * Check if we've seen this symbol before and trigger ticker update if new
+   */
+  private async checkForNewSymbol(symbol: string): Promise<void> {
+    if (!this.seenSymbols.has(symbol)) {
+      this.seenSymbols.add(symbol);
+      logger.info(`New symbol detected from Polygon WebSocket: ${symbol}`);
+      
+      // Throttle ticker updates to avoid excessive regeneration
+      const now = Date.now();
+      const TICKER_UPDATE_THROTTLE = 5 * 60 * 1000; // 5 minutes
+      
+      if (now - this.lastTickerUpdate > TICKER_UPDATE_THROTTLE) {
+        this.lastTickerUpdate = now;
+        logger.info('Triggering ticker file regeneration due to new symbols');
+        
+        // Import and trigger ticker regeneration in background
+        try {
+          const DataFileGeneratorFactory = require('../generators/DataFileGenerator').default;
+          const dataGenerator = DataFileGeneratorFactory.create();
+          
+          // Regenerate ticker file in background (non-blocking)
+          dataGenerator.generateTickersFile('stocks', true)
+            .then(() => dataGenerator.generateTickerIndex())
+            .then(() => dataGenerator.generateStatusFile())
+            .then(() => {
+              logger.info('Background ticker regeneration completed due to new symbols');
+            })
+            .catch((error: any) => {
+              logger.error('Background ticker regeneration failed', { error });
+            });
+        } catch (error) {
+          logger.error('Failed to trigger ticker regeneration', { error });
+        }
+      }
+    }
+  }
+
+  /**
+   * Manual method to force ticker regeneration (for testing/debugging)
+   */
+  public async forceTickerRegeneration(): Promise<void> {
+    logger.info('Manual ticker regeneration triggered');
+    try {
+      const DataFileGeneratorFactory = require('../generators/DataFileGenerator').default;
+      const dataGenerator = DataFileGeneratorFactory.create();
+      
+      await dataGenerator.generateTickersFile('stocks', true);
+      await dataGenerator.generateTickerIndex();
+      await dataGenerator.generateStatusFile();
+      
+      logger.info('Manual ticker regeneration completed');
+    } catch (error) {
+      logger.error('Manual ticker regeneration failed', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Get currently seen symbols for debugging
+   */
+  public getSeenSymbols(): string[] {
+    return Array.from(this.seenSymbols).sort();
   }
 
   /**

@@ -1,27 +1,36 @@
 export const environment = {
   production: true,
-  // Base API URL for HTTP communication
-  apiUrl: 'http://localhost:3001',
   
-  // HTTP proxy configuration (preferred for browser compatibility)
-  httpProxy: {
-    enabled: true,
-    baseUrl: 'http://localhost:3001/ftp-proxy',
-    listUrl: 'http://localhost:3001/ftp-proxy'
+  // Socket configuration for direct WebSocket communication with backend
+  socketConfig: {
+    host: 'localhost', // Update for production deployment
+    port: 3001, // Socket port as configured in backend
+    path: '/data-stream'
   },
   
-  // FTP configuration (fallback for direct FTP access)
-  ftpConfig: {
-    host: 'localhost',
-    port: 20,  // Updated to correct FTP port
-    user: 'admin',
-    password: 'admin'
-  },
+  // Health monitoring (read-only, not for data access)
+  healthCheckUrl: 'http://localhost:3001/health', // Update for production
   
   // Application settings
-  defaultStocks: ['AAPL', 'GOOGL', 'MSFT', 'TSLA'],
-  chartRefreshInterval: 60000, // 1 minute
+  defaultStocks: ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'SVIX'],
   
-  // Data source priority: 'http-proxy' | 'ftp' | 'both'
-  dataSourceMode: 'http-proxy'
+  // Auto-refresh configuration  
+  chartRefreshInterval: 60000, // 1 minute in production
+  tickerRefreshInterval: 3600000, // 1 hour for ticker data
+  statusCheckInterval: 300000, // 5 minutes for backend status
+  
+  // Auto-refresh behavior
+  autoRefresh: {
+    enabled: true,
+    enableOnStartup: true,
+    retryOnFailure: true,
+    maxRetries: 5,
+    backoffMultiplier: 1.5,
+  },
+  
+  // Production settings
+  debug: {
+    socketVerbose: false, // Disabled in production
+    enableConsoleLogging: false // Disabled in production
+  }
 };

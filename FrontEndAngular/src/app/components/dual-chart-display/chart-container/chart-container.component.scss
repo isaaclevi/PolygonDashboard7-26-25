@@ -6,8 +6,17 @@
 
 .price-chart-container {
   height: 70%;
+  position: relative;
 }
 
 .volume-chart-container {
   height: 30%;
+  position: relative;
+}
+
+.price-chart-container canvas,
+.volume-chart-container canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
 }

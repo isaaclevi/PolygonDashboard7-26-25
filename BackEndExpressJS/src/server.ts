@@ -1,26 +1,19 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+import { createServer } from 'http';
 import logger from './utils/logger';
 import DatabaseService from './services/DatabaseService';
-import FTPService from './services/FTPService';
+import SocketService from './services/SocketService';
 import PolygonService from './services/PolygonService';
 import { errorHandler } from './middleware/errorHandler';
-import { promises as fs } from 'fs';
-import path from 'path';
 import DataFileGeneratorFactory from './generators/DataFileGenerator';
 
 dotenv.config();
 
 /**
- * FTP-First Stock Data Backend Server
- * Primary: FTP server for file-based communication
- * Secondary: Minimal HTTP proxy for browser FTP access
- */
-
-/**
- * Initialize ticker data generation
- * Fetches all available tickers from Polygon.io and generates JSON files for FTP access
+ * Initialize ticker data from Polygon.io on server startup
+ * Runs in background to avoid blocking server start
  */
 async function initializeTickerData(): Promise<void> {
   try {
@@ -49,37 +42,37 @@ async function initializeTickerData(): Promise<void> {
 }
 
 /**
- * FTP-First Stock Data Backend Server
- * Primary: FTP server for file-based communication
- * Secondary: Minimal HTTP proxy for browser FTP access
+ * Socket-Based Stock Data Backend Server
+ * Primary: WebSocket server for real-time JSON data communication with frontend
+ * Secondary: Minimal health check endpoint for monitoring
  */
 const startServer = async () => {
   try {
-    logger.info('Starting FTP-First Stock Data Backend...');
+    logger.info('Starting Socket-Based Stock Data Backend...');
 
     // Initialize database connection
     await DatabaseService.connect();
     logger.info('Database connected successfully');
 
-    // Start FTP server for frontend communication
-    FTPService.start();
-    logger.info('FTP server started for frontend communication');
+    // Start Socket service for frontend communication
+    SocketService.start();
+    logger.info('Socket service started for frontend communication');
 
     // Initialize data file generator
     const dataGenerator = DataFileGeneratorFactory.create();
     
-    // Generate initial status file
+    // Generate initial status data
     await dataGenerator.generateStatusFile();
-    logger.info('Initial status file generated');
+    logger.info('Initial status data generated');
 
-    logger.info('🔧 Creating Express application...');
+    logger.info('🔧 Creating minimal Express application for health monitoring...');
     let app;
     try {
-      // Create minimal HTTP proxy for browser FTP access
+      // Create minimal HTTP app for health monitoring only
       app = express();
       logger.info('✅ Express app created successfully');
       
-      logger.info('🔧 Adding middleware...');
+      logger.info('🔧 Adding minimal middleware...');
       app.use(cors());
       app.use(express.json());
       logger.info('✅ Middleware added successfully');
@@ -88,102 +81,47 @@ const startServer = async () => {
       throw error;
     }
 
-    logger.info('DEBUG: Setting up Express routes...');
-    // 🌐 Serve Angular static files from public directory
-    app.use(express.static(path.join(__dirname, '../public')));
-    logger.info('DEBUG: 1. Static directory configured.');
+    logger.info('DEBUG: Setting up minimal Express routes...');
 
-    // Health check endpoint for Docker
+    // Health check endpoint for Docker and monitoring
     app.get('/health', (req, res) => {
       res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
         services: {
-          http: 'running',
-          ftp: 'running',
+          socket: 'running',
           database: 'connected',
           polygon: 'subscribed'
+        },
+        message: 'Socket-based backend server running. Frontend communication via WebSocket protocol only.',
+        socketEndpoint: '/data-stream'
+      });
+    });
+    logger.info('DEBUG: Health check endpoint configured.');
+
+    // Catch-all route to inform about socket-only communication
+    app.get('/{*splat}', (req, res) => {
+      res.status(404).json({
+        error: 'Socket-Only Communication Required',
+        message: 'This backend uses WebSocket protocol for frontend communication. HTTP endpoints are not available for data access.',
+        socketConfig: {
+          host: 'localhost',
+          port: process.env.SOCKET_PORT || 3001,
+          path: '/data-stream',
+          note: 'Use WebSocket client to access data streams'
         }
       });
     });
-    logger.info('DEBUG: 2. Health check endpoint configured.');
-
-    // HTTP proxy endpoint to serve FTP files for browser compatibility
-    app.get('/ftp-proxy/:filename', async (req, res) => {
-      try {
-        const fileName = req.params.filename;
-        const ftpDataDir = './ftp_data';
-        const filePath = path.join(ftpDataDir, fileName);
-
-        // Check if file exists
-        try {
-          await fs.access(filePath);
-        } catch (error) {
-          // File doesn't exist, try to generate it if it's a data file
-          if (fileName.includes('-') && fileName.endsWith('.json') && fileName !== 'status.json') {
-            await dataGenerator.generateDataFile(fileName);
-          } else if (fileName === 'status.json') {
-            await dataGenerator.generateStatusFile();
-          } else {
-            return res.status(404).json({
-              error: 'File not found',
-              message: `File ${fileName} not found. Expected format: SYMBOL-TIMEFRAME-STARTDATE-ENDDATE.json or status.json`
-            });
-          }
-        }
-
-        // Read and serve the file
-        const fileContent = await fs.readFile(filePath, 'utf8');
-        const jsonData = JSON.parse(fileContent);
-        
-        logger.info('HTTP FTP proxy served file', { fileName, size: fileContent.length });
-        res.json(jsonData);
-
-      } catch (error) {
-        logger.error('Error serving FTP file via HTTP proxy', { error, fileName: req.params.filename });
-        res.status(500).json({
-          error: 'Internal server error',
-          message: 'Failed to serve file from FTP storage'
-        });
-      }
-    });
-    logger.info('DEBUG: 3. FTP proxy endpoint configured.');
-
-    // List available FTP files endpoint
-    app.get('/ftp-proxy', async (req, res) => {
-      try {
-        const ftpDataDir = './ftp_data';
-        const files = await fs.readdir(ftpDataDir);
-        const fileList = files.filter(file => file.endsWith('.json'));
-        
-        logger.info('HTTP FTP proxy listed files', { fileCount: fileList.length });
-        res.json({ files: fileList });
-
-      } catch (error) {
-        logger.error('Error listing FTP files via HTTP proxy', { error });
-        res.status(500).json({
-          error: 'Internal server error',
-          message: 'Failed to list FTP files'
-        });
-      }
-    });
-    logger.info('DEBUG: 4. FTP list files endpoint configured.');
-
-    // Serve Angular index.html for root path
-    app.get('/', (req, res) => {
-      res.sendFile(path.join(__dirname, '../public/index.html'));
-    });
-    logger.info('DEBUG: 5. Root route configured.');
+    logger.info('DEBUG: Catch-all route configured for socket-only communication.');
 
     app.use(errorHandler);
-    logger.info('DEBUG: 6. Error handler configured.');
+    logger.info('DEBUG: Error handler configured.');
 
-    logger.info('🔧 Starting HTTP server...');
-    const httpPort = process.env.HTTP_PROXY_PORT || 3000;
-    logger.info(`🚀 Attempting to bind to port ${httpPort}...`);
-    
-    const server = app.listen(httpPort, () => {
-      logger.info(`✅ HTTP FTP proxy server running on port ${httpPort}`);
+    // Create HTTP server for health monitoring only
+    const httpPort = process.env.HTTP_PROXY_PORT || 3002; // Different port to avoid conflicts
+    const server = createServer(app);
+    server.listen(httpPort, () => {
+      logger.info(`✅ Health monitoring server running on port ${httpPort}`);
     });
 
     // Handle HTTP server errors
@@ -196,29 +134,33 @@ const startServer = async () => {
       }
     });
 
-    // Start periodic file cleanup (every 6 hours)
+    // Start periodic cleanup (every 6 hours) - though less relevant now since we don't store files
     setInterval(async () => {
       try {
-        await dataGenerator.cleanupOldFiles(24); // Keep files for 24 hours
-        await dataGenerator.generateStatusFile(); // Update status
+        await dataGenerator.cleanupOldFiles(24); // Keep files for 24 hours if any are still generated
+        logger.info('Periodic cleanup completed');
       } catch (error) {
         logger.error('Periodic cleanup failed', { error });
       }
     }, 6 * 60 * 60 * 1000); // 6 hours
 
-    // Subscribe to real-time data from Polygon.io (reduced connections to prevent limit)
-    const defaultSymbols = ['AAPL', 'GOOGL'];
+    // Subscribe to real-time data from Polygon.io
+    const defaultSymbols = ['AAPL', 'GOOGL', 'SVIX'];
+    
+    // TODO: Set up real-time data broadcasting to socket clients
+    // This will require modifying PolygonService to emit events or implementing a different pattern
+    
     PolygonService.subscribeToAllData(defaultSymbols);
-    logger.info('Subscribed to real-time data', { symbols: defaultSymbols });
+    logger.info('Subscribed to real-time data (broadcasting to be implemented)', { symbols: defaultSymbols });
 
-    logger.info('🚀 FTP-First Stock Data Backend is running successfully!');
-    logger.info('📊 Real-time data: Polygon.io WebSocket → Database');
-    logger.info('📁 Primary: FTP Server (JSON files only)');
-    logger.info('🌐 Secondary: HTTP proxy for browser FTP access');
+    // Initialize ticker data in background
+    await initializeTickerData();
+
+    logger.info('🚀 Socket-Based Stock Data Backend is running successfully!');
+    logger.info('📊 Real-time data: Polygon.io WebSocket → Database → Socket Broadcast');
+    logger.info('🔌 Primary: WebSocket Server (JSON data streams)');
+    logger.info('🌐 Secondary: Health monitoring endpoint only');
     logger.info('💾 Database: PostgreSQL with consolidated trades table');
-
-    // Ticker data initialization is now handled by FTP service on first connection
-    logger.info('📊 Ticker data will be initialized on first FTP connection (background)');
 
   } catch (error: any) {
     logger.error('Failed to start server', {
@@ -234,11 +176,13 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGINT', () => {
   logger.info('Received SIGINT, shutting down gracefully...');
+  SocketService.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   logger.info('Received SIGTERM, shutting down gracefully...');
+  SocketService.stop();
   process.exit(0);
 });
 

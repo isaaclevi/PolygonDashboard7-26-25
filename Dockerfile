@@ -48,11 +48,11 @@ COPY start.sh ./
 RUN chmod +x start.sh
 
 # Expose ports
-EXPOSE 3000 20 4200
+EXPOSE 3001 20 4200
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-  CMD curl -f http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:3001/health || exit 1
 
 # Start both services using PM2
 CMD ["./start.sh"] 

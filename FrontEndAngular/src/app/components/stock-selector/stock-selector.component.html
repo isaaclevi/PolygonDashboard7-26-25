@@ -28,9 +28,20 @@
     <span>{{ loadingError }}</span>
   </div>
   
-  <div class="stock-selector-dropdown" (clickOutside)="closeDropdown()" *ngIf="!isLoading">
+  <div class="stock-selector-dropdown" 
+       id="stock-selector"
+       role="combobox"
+       [attr.aria-expanded]="isDropdownOpen"
+       aria-haspopup="listbox"
+       aria-label="Select stock symbol"
+       (clickOutside)="closeDropdown()" 
+       *ngIf="!isLoading">
     <!-- Selected Stock Display -->
-    <div class="selected-stock" (click)="toggleDropdown()">
+    <div class="selected-stock" 
+         role="button"
+         tabindex="0"
+         (click)="toggleDropdown()"
+         (keydown)="onKeyDown($event)">
       <div class="stock-info" *ngIf="getSelectedStockInfo(); let selectedInfo">
         <span class="symbol">{{ selectedInfo.symbol }}</span>
         <span class="name">{{ selectedInfo.name }}</span>
@@ -57,10 +68,13 @@
         <input 
           type="text" 
           class="filter-input"
+          id="stock-filter"
           placeholder="Filter by symbol, name, sector, or description..."
           [(ngModel)]="filterText"
           (input)="onFilterChange()"
-          #filterInput>
+          #filterInput
+          aria-label="Filter stock options"
+          role="searchbox">
         <button 
           class="clear-filter-btn" 
           *ngIf="filterText" 
@@ -90,11 +104,19 @@
       </div>
 
       <!-- Stock Options List -->
-      <div class="options-container">
+      <div class="options-container" 
+           role="listbox"
+           aria-label="Available stock options">
         <div class="option-item" 
-             *ngFor="let stock of filteredStockOptions; trackBy: trackBySymbol" 
+             *ngFor="let stock of filteredStockOptions; trackBy: trackBySymbol; let i = index" 
              (click)="onStockSelect(stock)"
-             [class.selected]="stock.symbol === selectedStock">
+             [class.selected]="stock.symbol === selectedStock"
+             role="option"
+             [attr.aria-selected]="stock.symbol === selectedStock"
+             [attr.aria-posinset]="i + 1"
+             [attr.aria-setsize]="filteredStockOptions.length"
+             [attr.data-symbol]="stock.symbol"
+             tabindex="-1">
           <div class="option-content">
             <div class="primary-info">
               <div class="symbol">{{ stock.symbol }}</div>

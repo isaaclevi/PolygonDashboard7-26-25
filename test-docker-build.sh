@@ -15,8 +15,8 @@ DB_NAME=stock_data
 FTP_PORT=20
 FTP_USER=admin
 FTP_PASS=test_ftp_pass
-PORT=3000
-HTTP_PROXY_PORT=3000
+PORT=3001
+HTTP_PROXY_PORT=3001
 NODE_ENV=production
 LOG_LEVEL=info
 EOF
@@ -65,4 +65,4 @@ echo "Next steps:"
 echo "1. Copy env.example to .env"
 echo "2. Edit .env with your actual values"
 echo "3. Run: docker-compose up --build"
-echo "4. Access: http://localhost:3000" 
+echo "4. Access: http://localhost:3001" 

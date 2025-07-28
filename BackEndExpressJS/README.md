@@ -81,7 +81,7 @@ src/
     FTP_PASS=admin
 
     # Server
-    PORT=3000
+    PORT=3001
     LOG_LEVEL=info
     ```
 
