@@ -1,4 +1,50 @@
 <div class="dual-chart-container">
+  <!-- Zoom Control Toolbar -->
+  <div class="zoom-controls">
+    <div class="zoom-buttons">
+      <button mat-stroked-button 
+              (click)="resetZoom()" 
+              matTooltip="Reset Zoom (Double-click charts to reset as well)"
+              class="zoom-btn">
+        <mat-icon>zoom_out_map</mat-icon>
+        Reset Zoom
+      </button>
+      
+      <button mat-stroked-button 
+              (click)="zoomToLast24Hours()" 
+              matTooltip="Zoom to Last 24 Hours"
+              class="zoom-btn">
+        <mat-icon>schedule</mat-icon>
+        24H
+      </button>
+      
+      <button mat-stroked-button 
+              (click)="zoomToLastWeek()" 
+              matTooltip="Zoom to Last Week"
+              class="zoom-btn">
+        <mat-icon>date_range</mat-icon>
+        1W
+      </button>
+      
+      <button mat-stroked-button 
+              (click)="zoomToLastMonth()" 
+              matTooltip="Zoom to Last Month"
+              class="zoom-btn">
+        <mat-icon>calendar_month</mat-icon>
+        1M
+      </button>
+    </div>
+    
+    <div class="zoom-instructions">
+      <small>
+        <strong>Zoom:</strong> Mouse wheel or pinch | 
+        <strong>Pan:</strong> Shift + drag | 
+        <strong>Reset:</strong> Double-click
+      </small>
+    </div>
+  </div>
+
+  <!-- Charts -->
   <div class="price-chart-container">
     <app-price-chart [chartData]="chartData" [chartColors]="chartColors"></app-price-chart>
   </div>

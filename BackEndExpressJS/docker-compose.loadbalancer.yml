@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  # Load Balancer Service
+  loadbalancer:
+    build: .
+    container_name: stock-loadbalancer
+    ports:
+      - "3000:3000"  # Load balancer WebSocket port
+      - "3004:3004"  # Load balancer monitoring port
+    environment:
+      - NODE_ENV=production
+      - LOAD_BALANCER_PORT=3000
+      - LOAD_BALANCER_MONITORING_PORT=3004
+      - LOAD_BALANCER_ALGORITHM=least-connections
+      - HEALTH_CHECK_INTERVAL=15000
+      - HEALTH_CHECK_TIMEOUT=3000
+      - BACKEND_SERVERS=[{"host":"backend-1","port":3001,"weight":1},{"host":"backend-2","port":3002,"weight":1},{"host":"backend-3","port":3003,"weight":1}]
+    command: ["npm", "run", "loadbalancer"]
+    depends_on:
+      - backend-1
+      - backend-2
+      - backend-3
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # Backend Server 1
+  backend-1:
+    build: .
+    container_name: stock-backend-1
+    ports:
+      - "3001:3001"  # Socket server port
+      - "4001:4001"  # Health monitoring port
+    environment:
+      - NODE_ENV=production
+      - SOCKET_PORT=3001
+      - HTTP_PROXY_PORT=4001
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=stock_data
+    command: ["npm", "run", "backend:dev", "--", "--port=3001"]
+    depends_on:
+      - postgres
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # Backend Server 2
+  backend-2:
+    build: .
+    container_name: stock-backend-2
+    ports:
+      - "3002:3002"  # Socket server port
+      - "4002:4002"  # Health monitoring port
+    environment:
+      - NODE_ENV=production
+      - SOCKET_PORT=3002
+      - HTTP_PROXY_PORT=4002
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=stock_data
+    command: ["npm", "run", "backend:dev", "--", "--port=3002"]
+    depends_on:
+      - postgres
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # Backend Server 3
+  backend-3:
+    build: .
+    container_name: stock-backend-3
+    ports:
+      - "3003:3003"  # Socket server port
+      - "4003:4003"  # Health monitoring port
+    environment:
+      - NODE_ENV=production
+      - SOCKET_PORT=3003
+      - HTTP_PROXY_PORT=4003
+      - POLYGON_API_KEY=${POLYGON_API_KEY}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=stock_data
+    command: ["npm", "run", "backend:dev", "--", "--port=3003"]
+    depends_on:
+      - postgres
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: stock-postgres
+    environment:
+      - POSTGRES_DB=stock_data
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database-setup.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+  # PGAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: stock-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@stockdashboard.com
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - stock-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  stock-network:
+    driver: bridge 

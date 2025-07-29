@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Chart, ChartConfiguration, registerables } from 'chart.js';
 import 'chartjs-adapter-date-fns';
 import { CandlestickController, CandlestickElement, OhlcController, OhlcElement } from 'chartjs-chart-financial';
+import zoomPlugin from 'chartjs-plugin-zoom';
 import { DualChartData } from '../models/stock-data.interface';
 import { ChartColorConfig } from '../models/chart-config.interface';
 
@@ -11,7 +12,7 @@ import { ChartColorConfig } from '../models/chart-config.interface';
 export class ChartService {
 
   constructor() {
-    Chart.register(CandlestickController, CandlestickElement, OhlcController, OhlcElement, ...registerables);
+    Chart.register(CandlestickController, CandlestickElement, OhlcController, OhlcElement, zoomPlugin, ...registerables);
   }
 
   createPriceChart(canvasId: string, data: DualChartData, colors: ChartColorConfig): Chart {
@@ -77,6 +78,38 @@ export class ChartService {
             labels: {
               color: colors.text
             }
+          },
+          zoom: {
+            pan: {
+              enabled: true,
+              mode: 'x',
+              modifierKey: 'shift'
+            },
+            zoom: {
+              wheel: {
+                enabled: true,
+                speed: 0.1
+              },
+              pinch: {
+                enabled: true
+              },
+              mode: 'x',
+                            onZoomStart: (ctx: any) => {
+                // Broadcast zoom event for chart synchronization
+                ctx.chart.priceChartZoomEvent = true;
+                return undefined;
+              },
+              onZoom: (ctx: any) => {
+                // Store zoom state for synchronization
+                const chart = ctx.chart;
+                const xAxis = chart.scales.x;
+                if (chart.volumeChart && !chart.volumeChartZoomEvent) {
+                  (chart.volumeChart as any).zoomScale('x', { min: xAxis.min, max: xAxis.max }, 'none');
+                }
+                chart.priceChartZoomEvent = false;
+                return undefined;
+              }
+            }
           }
         }
       }
@@ -89,7 +122,12 @@ export class ChartService {
     }
     
     console.log(`Creating price chart on canvas: ${canvasId}`, data);
-    return new Chart(canvas, config);
+    const chart = new Chart(canvas, config);
+    
+    // Store reference for chart synchronization
+    (chart as any).chartType = 'price';
+    
+    return chart;
   }
 
   createVolumeChart(canvasId: string, data: DualChartData, colors: ChartColorConfig): Chart {
@@ -140,6 +178,38 @@ export class ChartService {
             labels: {
               color: colors.text
             }
+          },
+          zoom: {
+            pan: {
+              enabled: true,
+              mode: 'x',
+              modifierKey: 'shift'
+            },
+            zoom: {
+              wheel: {
+                enabled: true,
+                speed: 0.1
+              },
+              pinch: {
+                enabled: true
+              },
+              mode: 'x',
+                            onZoomStart: (ctx: any) => {
+                // Broadcast zoom event for chart synchronization
+                ctx.chart.volumeChartZoomEvent = true;
+                return undefined;
+              },
+              onZoom: (ctx: any) => {
+                // Store zoom state for synchronization
+                const chart = ctx.chart;
+                const xAxis = chart.scales.x;
+                if (chart.priceChart && !chart.priceChartZoomEvent) {
+                  (chart.priceChart as any).zoomScale('x', { min: xAxis.min, max: xAxis.max }, 'none');
+                }
+                chart.volumeChartZoomEvent = false;
+                return undefined;
+              }
+            }
           }
         }
       }
@@ -152,7 +222,12 @@ export class ChartService {
     }
     
     console.log(`Creating volume chart on canvas: ${canvasId}`, data);
-    return new Chart(canvas, config);
+    const chart = new Chart(canvas, config);
+    
+    // Store reference for chart synchronization
+    (chart as any).chartType = 'volume';
+    
+    return chart;
   }
 
   private createEmptyChart(canvasId: string, title: string, colors: ChartColorConfig): Chart {
@@ -212,5 +287,49 @@ export class ChartService {
     
     console.log(`Creating empty chart on canvas: ${canvasId}`);
     return new Chart(canvas, config);
+  }
+
+  /**
+   * Reset zoom on a chart
+   */
+  resetZoom(chart: Chart): void {
+    if (chart && (chart as any).resetZoom) {
+      (chart as any).resetZoom();
+    }
+  }
+
+  /**
+   * Reset zoom on both charts simultaneously
+   */
+  resetZoomBoth(priceChart: Chart | undefined, volumeChart: Chart | undefined): void {
+    if (priceChart && (priceChart as any).resetZoom) {
+      (priceChart as any).resetZoom();
+    }
+    if (volumeChart && (volumeChart as any).resetZoom) {
+      (volumeChart as any).resetZoom();
+    }
+  }
+
+  /**
+   * Pan to a specific date range on both charts
+   */
+  panToDateRange(priceChart: Chart | undefined, volumeChart: Chart | undefined, startDate: Date, endDate: Date): void {
+    const startTime = startDate.getTime();
+    const endTime = endDate.getTime();
+    
+    if (priceChart && (priceChart as any).zoomScale) {
+      (priceChart as any).zoomScale('x', { min: startTime, max: endTime }, 'none');
+    }
+    if (volumeChart && (volumeChart as any).zoomScale) {
+      (volumeChart as any).zoomScale('x', { min: startTime, max: endTime }, 'none');
+    }
+  }
+
+  /**
+   * Establish cross-references between price and volume charts for synchronization
+   */
+  linkCharts(priceChart: Chart, volumeChart: Chart): void {
+    (priceChart as any).volumeChart = volumeChart;
+    (volumeChart as any).priceChart = priceChart;
   }
 }

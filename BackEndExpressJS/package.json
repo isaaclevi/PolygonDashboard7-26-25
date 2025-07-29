@@ -8,7 +8,12 @@
     "build": "tsc",
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "start": "node dist/server.js",
-    "db:init": "ts-node src/utils/db-init.ts"
+    "db:init": "ts-node src/utils/db-init.ts",
+    "loadbalancer": "ts-node-dev --respawn --transpile-only src/loadbalancer-server.ts",
+    "loadbalancer:start": "node dist/loadbalancer-server.js",
+    "backend:dev": "ts-node-dev --respawn --transpile-only src/server.ts --port 3001",
+    "backend:dev:2": "ts-node-dev --respawn --transpile-only src/server.ts --port 3002",
+    "backend:dev:3": "ts-node-dev --respawn --transpile-only src/server.ts --port 3003"
   },
   "keywords": [],
   "author": "",

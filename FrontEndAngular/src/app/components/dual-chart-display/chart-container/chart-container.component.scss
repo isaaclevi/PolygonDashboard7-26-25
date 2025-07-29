@@ -4,13 +4,94 @@
   height: 100%;
 }
 
+// Zoom Controls Styling
+.zoom-controls {
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 56px;
+
+  .zoom-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+
+    .zoom-btn {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: auto;
+      padding: 6px 12px;
+      font-size: 0.875rem;
+      line-height: 1.25;
+      border-radius: 6px;
+      transition: all 0.2s ease;
+
+      mat-icon {
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+      }
+
+      &:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        transform: translateY(-1px);
+      }
+
+      &:active {
+        transform: translateY(0);
+      }
+    }
+  }
+
+  .zoom-instructions {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.75rem;
+    line-height: 1.2;
+    text-align: right;
+    min-width: 200px;
+
+    strong {
+      color: rgba(255, 255, 255, 0.9);
+    }
+  }
+
+  // Responsive design
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+
+    .zoom-buttons {
+      justify-content: center;
+      
+      .zoom-btn {
+        flex: 1;
+        min-width: 60px;
+        justify-content: center;
+      }
+    }
+
+    .zoom-instructions {
+      text-align: center;
+      min-width: auto;
+      font-size: 0.7rem;
+    }
+  }
+}
+
 .price-chart-container {
-  height: 70%;
+  height: calc(70% - 28px); // Reduced to account for zoom controls
   position: relative;
 }
 
 .volume-chart-container {
-  height: 30%;
+  height: calc(30% - 28px); // Reduced to account for zoom controls
   position: relative;
 }
 

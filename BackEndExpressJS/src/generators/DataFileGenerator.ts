@@ -649,7 +649,50 @@ class DataFileGenerator {
 
     } catch (error) {
       logger.error('Failed to generate trades data for socket', { error, params });
-      throw error;
+      // Return fallback data instead of throwing
+      logger.warn('Returning fallback trades data due to error');
+      
+      // Generate mock data for the requested symbol and timeframe
+      const baseDate = new Date();
+      const basePrice = 100 + Math.random() * 200;
+      const mockData = [];
+      
+      for (let i = 0; i < 50; i++) {
+        const timestamp = new Date(baseDate.getTime() - (50 - i) * 60 * 1000);
+        const priceVariation = (Math.random() - 0.5) * 10;
+        const open = basePrice + priceVariation;
+        const close = open + (Math.random() - 0.5) * 4;
+        const high = Math.max(open, close) + Math.random() * 2;
+        const low = Math.min(open, close) - Math.random() * 2;
+        const volume = Math.floor(Math.random() * 1000000) + 100000;
+        
+        mockData.push({
+          timestamp: timestamp.toISOString(),
+          open,
+          high,
+          low,
+          close,
+          volume
+        });
+      }
+      
+      const fallbackResponse: TradeDataResponse = {
+        metadata: {
+          symbol: params.symbol || 'UNKNOWN',
+          timeframe: params.timeframe || '1min',
+          startDate: params.startDate || new Date().toISOString(),
+          endDate: params.endDate || new Date().toISOString(),
+          generatedAt: new Date().toISOString(),
+          recordCount: mockData.length
+        },
+        data: mockData,
+        error: {
+          message: 'Database connection failed, using fallback data',
+          code: 'FALLBACK_DATA'
+        }
+      };
+
+      return fallbackResponse;
     }
   }
 
@@ -667,7 +710,7 @@ class DataFileGenerator {
         status: 'healthy',
         timestamp: new Date().toISOString(),
         services: {
-          database: 'connected',
+          database: DatabaseService.isDatabaseConnected() ? 'connected' : 'disconnected',
           socket: 'running',
           polygon: 'subscribed'
         },
@@ -683,7 +726,26 @@ class DataFileGenerator {
 
     } catch (error) {
       logger.error('Failed to generate status data for socket', { error });
-      throw error;
+      // Return fallback status instead of throwing
+      const fallbackStatus = {
+        system: 'StockTradingBackend',
+        status: 'degraded',
+        timestamp: new Date().toISOString(),
+        services: {
+          database: 'disconnected',
+          socket: 'running',
+          polygon: 'subscribed'
+        },
+        dataFreshness: {
+          lastUpdate: null,
+          availableSymbols: ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX'],
+          generatedAt: new Date().toISOString()
+        },
+        error: 'Database connection failed, using fallback data'
+      };
+
+      logger.warn('Returning fallback status due to error', { error });
+      return fallbackStatus;
     }
   }
 
@@ -755,7 +817,28 @@ class DataFileGenerator {
 
     } catch (error) {
       logger.error('Failed to generate tickers data for socket', { error });
-      throw error;
+      // Return fallback tickers data instead of throwing
+      logger.warn('Returning fallback tickers data due to error');
+      
+      const fallbackTickers = this.getManualFallbackSymbols();
+      
+      const fallbackResponse = {
+        metadata: {
+          generatedAt: new Date().toISOString(),
+          source: 'fallback',
+          market: 'stocks',
+          activeOnly: true,
+          totalCount: fallbackTickers.length,
+          polygonCount: 0,
+          manualCount: fallbackTickers.length,
+          apiEndpoint: 'fallback',
+          version: '1.1',
+          error: 'Polygon.io API failed, using fallback data'
+        },
+        tickers: fallbackTickers
+      };
+
+      return fallbackResponse;
     }
   }
 }

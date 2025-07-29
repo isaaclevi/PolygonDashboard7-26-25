@@ -9,6 +9,11 @@ import PolygonService from './services/PolygonService';
 import { errorHandler } from './middleware/errorHandler';
 import DataFileGeneratorFactory from './generators/DataFileGenerator';
 
+// Parse command line arguments for port
+const args = process.argv.slice(2);
+const portArg = args.find(arg => arg.startsWith('--port='));
+const socketPort = portArg ? parseInt(portArg.split('=')[1]) : undefined;
+
 dotenv.config();
 
 /**
@@ -54,9 +59,13 @@ const startServer = async () => {
     await DatabaseService.connect();
     logger.info('Database connected successfully');
 
-    // Start Socket service for frontend communication
-    SocketService.start();
-    logger.info('Socket service started for frontend communication');
+    // Create and start Socket service for frontend communication
+    const socketService = new SocketService(socketPort);
+    socketService.start();
+    logger.info('Socket service started for frontend communication', { 
+      port: socketPort || 'default',
+      customPort: socketPort 
+    });
 
     // Initialize data file generator
     const dataGenerator = DataFileGeneratorFactory.create();
@@ -100,7 +109,7 @@ const startServer = async () => {
     logger.info('DEBUG: Health check endpoint configured.');
 
     // Catch-all route to inform about socket-only communication
-    app.get('/{*splat}', (req, res) => {
+    app.use((req, res) => {
       res.status(404).json({
         error: 'Socket-Only Communication Required',
         message: 'This backend uses WebSocket protocol for frontend communication. HTTP endpoints are not available for data access.',
@@ -118,7 +127,7 @@ const startServer = async () => {
     logger.info('DEBUG: Error handler configured.');
 
     // Create HTTP server for health monitoring only
-    const httpPort = process.env.HTTP_PROXY_PORT || 3002; // Different port to avoid conflicts
+    const httpPort = socketPort ? socketPort + 1000 : (process.env.HTTP_PROXY_PORT || 3002); // Different port to avoid conflicts
     const server = createServer(app);
     server.listen(httpPort, () => {
       logger.info(`✅ Health monitoring server running on port ${httpPort}`);
@@ -145,7 +154,7 @@ const startServer = async () => {
     }, 6 * 60 * 60 * 1000); // 6 hours
 
     // Subscribe to real-time data from Polygon.io
-    const defaultSymbols = ['AAPL', 'GOOGL', 'SVIX'];
+    const defaultSymbols = ['AAPL', 'GOOGL', 'SVIX', 'WULF','UVIX','VXX','JOBY','ACHR'];
     
     // TODO: Set up real-time data broadcasting to socket clients
     // This will require modifying PolygonService to emit events or implementing a different pattern
@@ -176,13 +185,11 @@ const startServer = async () => {
 // Handle graceful shutdown
 process.on('SIGINT', () => {
   logger.info('Received SIGINT, shutting down gracefully...');
-  SocketService.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   logger.info('Received SIGTERM, shutting down gracefully...');
-  SocketService.stop();
   process.exit(0);
 });
 

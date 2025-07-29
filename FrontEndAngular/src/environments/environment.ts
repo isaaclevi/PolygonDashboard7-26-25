@@ -5,7 +5,7 @@ export const environment = {
   socketConfig: {
     host: 'localhost',
     port: 3001, // Socket port as configured in backend
-    path: '/data-stream'
+    path: '' // Connect to root path since WebSocket server listens on root
   },
   
   // Health monitoring (read-only, not for data access)
