@@ -4,7 +4,7 @@
     <div class="zoom-buttons">
       <button mat-stroked-button 
               (click)="resetZoom()" 
-              matTooltip="Reset Zoom (Double-click charts to reset as well)"
+              matTooltip="Reset Zoom (Double-click charts or press Escape)"
               class="zoom-btn">
         <mat-icon>zoom_out_map</mat-icon>
         Reset Zoom
@@ -34,21 +34,75 @@
         1M
       </button>
     </div>
+
+    <!-- Navigation Controls -->
+    <div class="navigation-buttons">
+      <button mat-stroked-button 
+              (click)="panLeft()" 
+              matTooltip="Scroll Left (or use Left Arrow key)"
+              class="nav-btn">
+        <mat-icon>chevron_left</mat-icon>
+        Scroll Left
+      </button>
+      
+      <button mat-stroked-button 
+              (click)="panRight()" 
+              matTooltip="Scroll Right (or use Right Arrow key)"
+              class="nav-btn">
+        <mat-icon>chevron_right</mat-icon>
+        Scroll Right
+      </button>
+    </div>
     
     <div class="zoom-instructions">
       <small>
-        <strong>Zoom:</strong> Mouse wheel or pinch | 
-        <strong>Pan:</strong> Shift + drag | 
-        <strong>Reset:</strong> Double-click
+        <strong>Zoom:</strong> Ctrl + Mouse wheel or pinch | 
+        <strong>Scroll:</strong> Mouse wheel, drag, arrow keys, or scrollbar | 
+        <strong>Navigate:</strong> Home/End keys | 
+        <strong>Reset:</strong> Escape or double-click
       </small>
     </div>
   </div>
 
-  <!-- Charts -->
+  <!-- Price Chart Container -->
   <div class="price-chart-container">
     <app-price-chart [chartData]="chartData" [chartColors]="chartColors"></app-price-chart>
+    
+    <!-- Price Chart Scrollbar -->
+    <div class="chart-scrollbar-container">
+      <div class="chart-scrollbar" 
+           #priceScrollbar
+           (mousedown)="startScrollbarDrag($event, 'price')"
+           (touchstart)="startScrollbarDrag($event, 'price')">
+        <div class="scrollbar-track">
+          <div class="scrollbar-thumb" 
+               [style.left.%]="priceScrollState.position"
+               [style.width.%]="priceScrollState.thumbSize"
+               [class.scrollbar-thumb-dragging]="priceScrollState.isDragging">
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <!-- Volume Chart Container -->
   <div class="volume-chart-container">
     <app-volume-chart [chartData]="chartData" [chartColors]="chartColors"></app-volume-chart>
+    
+    <!-- Volume Chart Scrollbar -->
+    <div class="chart-scrollbar-container">
+      <div class="chart-scrollbar"
+           #volumeScrollbar
+           (mousedown)="startScrollbarDrag($event, 'volume')"
+           (touchstart)="startScrollbarDrag($event, 'volume')">
+        <div class="scrollbar-track">
+          <div class="scrollbar-thumb"
+               [style.left.%]="volumeScrollState.position"
+               [style.width.%]="volumeScrollState.thumbSize"
+               [class.scrollbar-thumb-dragging]="volumeScrollState.isDragging">
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>

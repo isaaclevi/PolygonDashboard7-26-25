@@ -11,9 +11,9 @@ import {
 } from '../models/Trades';
 
 class DatabaseService {
-  private pool!: Pool;
-  private mockMode: boolean = false; // Set to false to use real database
-  private mockData: CreateTradeInput[] = []; // TEMPORARY: In-memory storage
+  private readonly pool!: Pool;
+  private readonly mockMode: boolean = false; // Set to false to use real database
+  private readonly mockData: CreateTradeInput[] = []; // TEMPORARY: In-memory storage
   private isConnected: boolean = false;
 
   constructor() {

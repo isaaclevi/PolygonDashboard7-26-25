@@ -49,17 +49,21 @@ export class SocketService {
 
   private async ensureWebSocketConnection(): Promise<void> {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      console.log('🔌 Socket Service: Already connected');
       return;
     }
 
     if (this.isReconnecting) {
+      console.log('🔌 Socket Service: Already attempting reconnection');
       // Wait for existing reconnection attempt
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
         const checkConnection = () => {
           if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            console.log('🔌 Socket Service: Reconnection successful');
             resolve();
           } else if (!this.isReconnecting) {
-            resolve();
+            console.error('🔌 Socket Service: Reconnection failed');
+            reject(new Error('Connection attempt failed - backend may not be running'));
           } else {
             setTimeout(checkConnection, 100);
           }
@@ -71,57 +75,79 @@ export class SocketService {
     this.isReconnecting = true;
     console.log('🔌 Socket Service: Attempting to connect to backend...');
 
-    try {
-      const socketUrl = `ws://${environment.socketConfig.host}:${environment.socketConfig.port}${environment.socketConfig.path}`;
-      console.log('🔌 Socket Service: Connecting to', socketUrl);
+    return new Promise((resolve, reject) => {
+      try {
+        const socketUrl = `ws://${environment.socketConfig.host}:${environment.socketConfig.port}${environment.socketConfig.path}`;
+        console.log('🔌 Socket Service: Connecting to', socketUrl);
 
-      this.ws = new WebSocket(socketUrl);
+        this.ws = new WebSocket(socketUrl);
 
-      this.ws.onopen = () => {
-        console.log('✅ Socket Service: Connected to backend successfully');
-        this.connectionStatus.next(true);
-        this.reconnectAttempts = 0;
-        this.isReconnecting = false;
-        this.reconnectDelay = 2000; // Reset delay
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const message: SocketMessage = JSON.parse(event.data);
-          console.log('📨 Socket Service: Received message', { type: message.type, id: message.id });
-          
-          const handler = this.messageHandlers.get(message.id);
-          if (handler) {
-            this.messageHandlers.delete(message.id);
-            handler(message);
-          } else {
-            console.warn('⚠️ Socket Service: No handler found for message', { id: message.id });
+        // Set up a connection timeout
+        const connectionTimeout = setTimeout(() => {
+          if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+            console.error('❌ Socket Service: Connection timeout - backend server may not be running');
+            this.ws.close();
+            this.isReconnecting = false;
+            reject(new Error('Connection timeout - please ensure the backend server is running on port 3001'));
           }
-        } catch (error) {
-          console.error('❌ Socket Service: Failed to parse message', { error, data: event.data });
-        }
-      };
+        }, 10000); // 10 second timeout
 
-      this.ws.onclose = (event) => {
-        console.log('🔌 Socket Service: Connection closed', { code: event.code, reason: event.reason });
-        this.connectionStatus.next(false);
+        this.ws.onopen = () => {
+          clearTimeout(connectionTimeout);
+          console.log('✅ Socket Service: Connected to backend successfully');
+          this.connectionStatus.next(true);
+          this.reconnectAttempts = 0;
+          this.isReconnecting = false;
+          this.reconnectDelay = 2000; // Reset delay
+          resolve();
+        };
+
+        this.ws.onmessage = (event) => {
+          try {
+            const message: SocketMessage = JSON.parse(event.data);
+            console.log('📨 Socket Service: Received message', { type: message.type, id: message.id, dataSize: event.data.length });
+            
+            const handler = this.messageHandlers.get(message.id);
+            if (handler) {
+              this.messageHandlers.delete(message.id);
+              handler(message);
+            } else {
+              console.warn('⚠️ Socket Service: No handler found for message', { id: message.id, type: message.type });
+            }
+          } catch (error) {
+            console.error('❌ Socket Service: Error parsing message', error, 'Raw data:', event.data);
+          }
+        };
+
+        this.ws.onerror = (error) => {
+          clearTimeout(connectionTimeout);
+          console.error('❌ Socket Service: WebSocket error', error);
+          this.connectionStatus.next(false);
+          this.isReconnecting = false;
+          reject(new Error('WebSocket connection error - please ensure the backend server is running'));
+        };
+
+        this.ws.onclose = (event) => {
+          clearTimeout(connectionTimeout);
+          console.log('🔌 Socket Service: Connection closed', { code: event.code, reason: event.reason });
+          this.connectionStatus.next(false);
+          
+          if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.scheduleReconnect();
+          } else {
+            this.isReconnecting = false;
+            if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+              reject(new Error('Maximum reconnection attempts reached - backend server may be down'));
+            }
+          }
+        };
+
+      } catch (error) {
+        console.error('❌ Socket Service: Failed to create WebSocket connection', error);
         this.isReconnecting = false;
-        
-        if (!event.wasClean && this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        }
-      };
-
-      this.ws.onerror = (error) => {
-        console.error('❌ Socket Service: WebSocket error', error);
-        this.connectionStatus.next(false);
-      };
-
-    } catch (error) {
-      console.error('❌ Socket Service: Failed to create WebSocket connection', error);
-      this.isReconnecting = false;
-      throw error;
-    }
+        reject(error);
+      }
+    });
   }
 
   private scheduleReconnect(): void {
@@ -135,29 +161,45 @@ export class SocketService {
   }
 
   private async sendMessage(message: Partial<SocketMessage>): Promise<SocketMessage> {
-    await this.ensureWebSocketConnection();
+    try {
+      console.log('📤 Socket Service: Attempting to send message', { type: message.type, symbol: message.symbol });
+      await this.ensureWebSocketConnection();
+    } catch (connectionError: any) {
+      console.error('❌ Socket Service: Failed to establish connection', connectionError);
+      throw new Error(`Backend connection failed: ${connectionError?.message || 'Unknown error'}. Please ensure the backend server is running on port 3001.`);
+    }
 
     return new Promise((resolve, reject) => {
       const id = `msg_${++this.messageCounter}_${Date.now()}`;
-      const fullMessage = { ...message, id };
+      const fullMessage: SocketMessage = { id, ...message } as SocketMessage;
 
-      console.log('📤 Socket Service: Sending message', { type: message.type, id });
+      console.log('📤 Socket Service: Sending message', { id, type: fullMessage.type, symbol: fullMessage.symbol });
 
+      // Store message handler
       this.messageHandlers.set(id, (response: SocketMessage) => {
         if (response.error) {
           console.error('❌ Socket Service: Received error response', { error: response.error, id });
           reject(new Error(response.error));
         } else {
-          console.log('✅ Socket Service: Received successful response', { type: response.type, id });
+          console.log('✅ Socket Service: Received successful response', { type: response.type, id, dataSize: response.data ? JSON.stringify(response.data).length : 0 });
           resolve(response);
         }
       });
 
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        this.ws.send(JSON.stringify(fullMessage));
+        try {
+          const messageString = JSON.stringify(fullMessage);
+          console.log('📤 Socket Service: Sending JSON message', { size: messageString.length });
+          this.ws.send(messageString);
+        } catch (sendError: any) {
+          this.messageHandlers.delete(id);
+          console.error('❌ Socket Service: Failed to send message', sendError);
+          reject(new Error(`Failed to send message: ${sendError?.message || 'Unknown error'}`));
+        }
       } else {
         this.messageHandlers.delete(id);
-        reject(new Error('WebSocket not connected'));
+        console.error('❌ Socket Service: WebSocket not in OPEN state', { readyState: this.ws?.readyState });
+        reject(new Error('WebSocket connection lost - please try again'));
       }
 
       // Timeout after 30 seconds
@@ -165,7 +207,7 @@ export class SocketService {
         if (this.messageHandlers.has(id)) {
           this.messageHandlers.delete(id);
           console.error('⏰ Socket Service: Operation timed out', { id, type: message.type });
-          reject(new Error('Socket operation timeout'));
+          reject(new Error('Socket operation timeout - backend may be unresponsive'));
         }
       }, 30000);
     });

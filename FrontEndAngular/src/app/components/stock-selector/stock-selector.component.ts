@@ -375,7 +375,17 @@ export class StockSelectorComponent implements OnInit, OnDestroy {
 
     } catch (error) {
       console.error('❌ Complete ticker loading failure:', error);
-      this.loadingError = 'Failed to load ticker data. Using limited fallback set.';
+      
+      // Provide user-friendly error message based on error type
+      const errorMessage = (error as any)?.message || '';
+      if (errorMessage.includes('Backend connection failed') || errorMessage.includes('WebSocket')) {
+        this.loadingError = 'Backend server is not running. Using limited stock data. Please start the backend server and refresh.';
+      } else if (errorMessage.includes('timeout')) {
+        this.loadingError = 'Backend server is not responding. Using limited stock data. Please check the server and refresh.';
+      } else {
+        this.loadingError = 'Failed to load ticker data. Using limited fallback set.';
+      }
+      
       this.syncStatus = 'offline';
       
       // Final fallback to hardcoded popular stocks
@@ -409,39 +419,45 @@ export class StockSelectorComponent implements OnInit, OnDestroy {
   private performFiltering(filterText: string): void {
     const startTime = performance.now();
     
-    if (!filterText.trim()) {
+    if (!filterText || !filterText.trim()) {
       // Show limited results when no filter to prevent UI lag
       this.filteredStocks = this.stockOptions.slice(0, this.maxDisplayResults);
-      console.log(`⚡ Filter cleared - showing first ${this.maxDisplayResults} results`);
+      console.log(`⚡ Filter cleared - showing first ${this.maxDisplayResults} of ${this.stockOptions.length} results`);
       return;
     }
 
-    const searchText = filterText.toLowerCase();
-    const filtered = this.stockOptions.filter(stock => 
-      stock.symbol.toLowerCase().includes(searchText) ||
-      stock.name.toLowerCase().includes(searchText) ||
-      stock.sector.toLowerCase().includes(searchText) ||
-      (stock.description && stock.description.toLowerCase().includes(searchText)) ||
-      (stock.exchange && stock.exchange.toLowerCase().includes(searchText))
-    );
+    // Normalize search text: trim whitespace and convert to lowercase
+    const searchText = filterText.trim().toLowerCase();
+    const filtered = this.stockOptions.filter(stock => {
+      // Check each field with proper null/undefined handling
+      const symbolMatch = stock.symbol && stock.symbol.toLowerCase().includes(searchText);
+      const nameMatch = stock.name && stock.name.toLowerCase().includes(searchText);
+      const sectorMatch = stock.sector && stock.sector.toLowerCase().includes(searchText);
+      const descriptionMatch = stock.description && stock.description.toLowerCase().includes(searchText);
+      const exchangeMatch = stock.exchange && stock.exchange.toLowerCase().includes(searchText);
+      
+      return symbolMatch || nameMatch || sectorMatch || descriptionMatch || exchangeMatch;
+    });
 
     // Limit results for performance - prioritize exact matches
-    const exactMatches = filtered.filter(stock => 
-      stock.symbol.toLowerCase().startsWith(searchText) ||
-      stock.name.toLowerCase().startsWith(searchText)
-    );
+    const exactMatches = filtered.filter(stock => {
+      const symbolStartsWith = stock.symbol && stock.symbol.toLowerCase().startsWith(searchText);
+      const nameStartsWith = stock.name && stock.name.toLowerCase().startsWith(searchText);
+      return symbolStartsWith || nameStartsWith;
+    });
     
-    const otherMatches = filtered.filter(stock => 
-      !stock.symbol.toLowerCase().startsWith(searchText) &&
-      !stock.name.toLowerCase().startsWith(searchText)
-    );
+    const otherMatches = filtered.filter(stock => {
+      const symbolStartsWith = stock.symbol && stock.symbol.toLowerCase().startsWith(searchText);
+      const nameStartsWith = stock.name && stock.name.toLowerCase().startsWith(searchText);
+      return !symbolStartsWith && !nameStartsWith;
+    });
 
     // Combine with exact matches first, then limit total results
     const combinedResults = [...exactMatches, ...otherMatches];
     this.filteredStocks = combinedResults.slice(0, this.maxDisplayResults);
 
     const endTime = performance.now();
-    console.log(`⚡ Filter applied: "${filterText}" -> ${this.filteredStocks.length}/${filtered.length} results in ${(endTime - startTime).toFixed(2)}ms`);
+    console.log(`⚡ Filter applied: "${filterText}" -> ${this.filteredStocks.length}/${filtered.length} results (${exactMatches.length} exact) in ${(endTime - startTime).toFixed(2)}ms`);
   }
 
   /**
@@ -460,6 +476,7 @@ export class StockSelectorComponent implements OnInit, OnDestroy {
       return;
     }
     
+    console.log(`🔍 Filter changed: "${this.lastFilterText}" -> "${this.filterText}"`);
     this.lastFilterText = this.filterText;
     this.filterSubject.next(this.filterText);
   }
@@ -501,8 +518,8 @@ export class StockSelectorComponent implements OnInit, OnDestroy {
   toggleDropdown(): void {
     this.isDropdownOpen = !this.isDropdownOpen;
     if (this.isDropdownOpen) {
-      // Show all tickers when dropdown opens
-      this.filteredStocks = this.filteredStockOptions;
+      // Properly initialize filtered stocks when dropdown opens
+      this.performFiltering(this.filterText || '');
       console.log(`📋 Dropdown opened - showing ${this.filteredStocks.length} tickers`);
       // Focus the filter input when dropdown opens
       setTimeout(() => {
@@ -601,6 +618,7 @@ export class StockSelectorComponent implements OnInit, OnDestroy {
     this.filterText = '';
     this.lastFilterText = '';
     this.performFiltering(''); // Immediate update for clear action
+    console.log(`🧹 Filter cleared - showing ${this.filteredStocks.length} results`);
   }
 
   trackBySymbol(index: number, stock: StockOption): string {

@@ -5,7 +5,7 @@ export const environment = {
   socketConfig: {
     host: 'localhost',
     port: 3001, // Socket port as configured in backend
-    path: '' // Connect to root path since WebSocket server listens on root
+    path: '/data-stream' // Updated to match backend configuration
   },
   
   // Health monitoring (read-only, not for data access)
@@ -15,9 +15,9 @@ export const environment = {
   defaultStocks: ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'SVIX'],
   
   // Auto-refresh configuration
-  chartRefreshInterval: 3600000, // 1 hour (3,600,000 ms) for chart data
-  tickerRefreshInterval: 3600000, // 1 hour for ticker data  
-  statusCheckInterval: 300000, // 5 minutes for backend status (more frequent for health monitoring)
+  chartRefreshInterval: 500, // 0.5 sound (500 ms) for chart data
+  tickerRefreshInterval: 500, // 0.5 sound (500 ms) for ticker data  
+  statusCheckInterval: 500, // 0.5 sound (500 ms) for backend status (more frequent for health monitoring)
   
   // Auto-refresh behavior
   autoRefresh: {
@@ -30,7 +30,7 @@ export const environment = {
   
   // Development settings
   debug: {
-    socketVerbose: false, // Set to true for WebSocket debugging
+    socketVerbose: true, // Set to true for WebSocket debugging
     enableConsoleLogging: true
   }
 };

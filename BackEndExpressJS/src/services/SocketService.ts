@@ -31,18 +31,18 @@ interface ClientConnection {
  * Supports real-time data streaming and on-demand data generation
  */
 class SocketService {
-  private wss: WebSocketServer;
-  private httpServer: Server;
-  private clients: Map<WebSocket, ClientConnection> = new Map();
-  private dataGenerator: any;
-  private messageTimeouts: Map<string, NodeJS.Timeout> = new Map();
-  private customPort?: number;
+  private readonly wss: WebSocketServer;
+  private readonly httpServer: Server;
+  private readonly clients: Map<WebSocket, ClientConnection> = new Map();
+  private readonly dataGenerator: any;
+  private readonly messageTimeouts: Map<string, NodeJS.Timeout> = new Map();
+  private readonly customPort?: number;
 
   constructor(customPort?: number) {
     this.httpServer = createServer();
     this.wss = new WebSocketServer({ 
       server: this.httpServer,
-      path: '/' // Listen on root path for easier connection
+      path: socketConfig.path // Use path from configuration instead of hardcoded root
     });
     this.dataGenerator = DataFileGeneratorFactory.create();
     this.setupWebSocketHandlers();
@@ -368,13 +368,26 @@ class SocketService {
     }
   }
 
+  // private async getAvailableSymbols(): Promise<string[]> {
+  //   try {
+  //     // For now, return a basic set of symbols
+  //     // In production, this would query the database
+  //     return ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'SVIX', 'WULF'];
+  //   } catch (error: unknown) {
+  //     console.error('Failed to get available symbols', {
+  //       error: error instanceof Error ? error.message : String(error)
+  //     });
+  //     return [];
+  //   }
+  // }
+
   private async getAvailableSymbols(): Promise<string[]> {
     try {
       // For now, return a basic set of symbols
       // In production, this would query the database
       return ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'SVIX', 'WULF'];
-    } catch (error) {
-      logger.error('Failed to get available symbols', { error });
+    } catch (error: any) {
+      console.error('Failed to get available symbols', {error});
       return [];
     }
   }

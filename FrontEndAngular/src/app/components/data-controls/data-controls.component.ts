@@ -33,6 +33,15 @@ export class DataControlsComponent implements OnInit {
 
   ngOnInit() {
     console.log('🎛️ Data Controls: Component initialized, waiting for stock selection...');
+    
+    // Auto-trigger initial data load after a short delay if no stock selection occurs
+    setTimeout(() => {
+      if (!this.initialDataRequested) {
+        console.log('🚀 Data Controls: Auto-triggering initial data load for default stock (AAPL)...');
+        this.onGetData();
+        this.initialDataRequested = true;
+      }
+    }, 2000); // 2 second delay to allow stock selector to initialize
   }
 
   onStockSelected(stockInfo: StockSelectionEvent): void {

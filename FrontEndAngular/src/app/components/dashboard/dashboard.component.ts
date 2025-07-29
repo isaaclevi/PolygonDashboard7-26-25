@@ -107,6 +107,8 @@ export class DashboardComponent implements OnInit, OnDestroy {
   }
 
   private loadDataWithParams(params: { symbol: string, timeframe: string, startDate: string, endDate: string }) {
+    console.log('🔄 Dashboard: Loading data with params', params);
+    
     // Try backend first, fallback to mock data if backend fails
     this.stockApiService.getStockData(params.symbol, params.timeframe, params.startDate, params.endDate)
       .pipe(
@@ -122,32 +124,41 @@ export class DashboardComponent implements OnInit, OnDestroy {
             );
         })
       )
-      .subscribe(data => {
-        console.log('✅ Data received:', data);
-        
-        // Handle different data formats (backend vs mock)
-        if (data && typeof data === 'object' && 'data' in data) {
-          // Mock data format with metadata wrapper
-          const mockResponse = data as MockApiResponse;
-          const stockData: StockData[] = mockResponse.data.map(item => ({
-            symbol: mockResponse.metadata.symbol,
-            timestamp: new Date(item.timestamp),
-            open: item.open,
-            high: item.high,
-            low: item.low,
-            close: item.close,
-            volume: item.volume,
-            timeframe: mockResponse.metadata.timeframe as '1min' | '5min' | '1hour' | '1day'
-          }));
+      .subscribe({
+        next: (data) => {
+          console.log('✅ Dashboard: Data received successfully', { 
+            dataLength: Array.isArray(data) ? data.length : 'unknown',
+            dataType: typeof data,
+            hasData: !!data
+          });
           
-          this.chartData = this.transformDataForChart(stockData, params.symbol, params.timeframe);
-          console.log('📈 Chart data generated from mock service');
-        } else if (Array.isArray(data)) {
-          // Backend format (array of StockData)
-          this.chartData = this.transformDataForChart(data as StockData[], params.symbol, params.timeframe);
-          console.log('📈 Chart data generated from backend');
-        } else {
-          console.error('❌ Unknown data format received:', data);
+          // Handle different data formats (backend vs mock)
+          if (data && typeof data === 'object' && 'data' in data) {
+            // Mock data format with metadata wrapper
+            const mockResponse = data as MockApiResponse;
+            const stockData: StockData[] = mockResponse.data.map(item => ({
+              symbol: mockResponse.metadata.symbol,
+              timestamp: new Date(item.timestamp),
+              open: item.open,
+              high: item.high,
+              low: item.low,
+              close: item.close,
+              volume: item.volume,
+              timeframe: mockResponse.metadata.timeframe as '1min' | '5min' | '1hour' | '1day'
+            }));
+            
+            this.chartData = this.transformDataForChart(stockData, params.symbol, params.timeframe);
+            console.log('📈 Chart data generated from mock service');
+          } else if (Array.isArray(data)) {
+            // Backend format (array of StockData)
+            this.chartData = this.transformDataForChart(data as StockData[], params.symbol, params.timeframe);
+            console.log('📈 Chart data generated from backend');
+          } else {
+            console.error('❌ Unknown data format received:', data);
+          }
+        },
+        error: (error) => {
+          console.error('❌ Dashboard: Error loading data:', error);
         }
       });
   }
