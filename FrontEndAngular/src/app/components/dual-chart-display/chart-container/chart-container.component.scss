@@ -280,6 +280,54 @@ app-volume-chart {
   }
 }
 
+// Individual chart time scale wrappers
+.price-time-scale-wrapper,
+.volume-time-scale-wrapper {
+  width: 100%;
+  margin-top: 2px;
+  overflow: hidden;
+  background-color: #2a2a2a;
+  border-top: 1px solid #444;
+  
+  // Ensure time scale aligns with chart area
+  padding-left: 40px; // Account for y-axis space
+  padding-right: 20px;
+  box-sizing: border-box;
+  
+  // Smaller height for individual chart time scales
+  .time-scale-container {
+    height: 35px; // Reduced from 40px
+  }
+}
+
+.price-time-scale-wrapper {
+  // Slightly different styling for price chart
+  border-top-color: #4a4a4a;
+}
+
+.volume-time-scale-wrapper {
+  // Slightly different styling for volume chart
+  border-top-color: #3a3a3a;
+}
+
+// Responsive adjustments for time scales
+@media (max-width: 768px) {
+  .price-time-scale-wrapper,
+  .volume-time-scale-wrapper {
+    padding-left: 30px;
+    padding-right: 15px;
+  }
+  
+  .price-time-scale-wrapper .time-scale-container,
+  .volume-time-scale-wrapper .time-scale-container {
+    height: 30px; // Even smaller on mobile
+    
+    .time-scale-tick.major-tick .tick-label {
+      font-size: 9px; // Smaller font on mobile
+    }
+  }
+}
+
 // High contrast mode support
 @media (prefers-contrast: high) {
   .scrollbar-track {

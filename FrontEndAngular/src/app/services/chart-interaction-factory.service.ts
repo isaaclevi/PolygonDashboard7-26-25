@@ -113,6 +113,9 @@ export class ChartInteractionFactory {
           this.syncZoomWithPairedChart(chart, chartType, { min: xAxis.min, max: xAxis.max });
         }
 
+        // Emit event for time scale updates
+        this.notifyTimeRangeChanged(chart, { min: xAxis.min, max: xAxis.max });
+
         // Reset zoom event flag
         chart[`${chartType}ChartZoomEvent`] = false;
         return undefined;
@@ -121,6 +124,10 @@ export class ChartInteractionFactory {
       onZoomComplete: (ctx: any) => {
         console.log(`✅ Zoom complete - ${chartType} chart`);
         ctx.chart[`${chartType}ChartZoomEvent`] = false;
+        
+        // Final time range update
+        const xAxis = ctx.chart.scales['x'];
+        this.notifyTimeRangeChanged(ctx.chart, { min: xAxis.min, max: xAxis.max });
       }
     };
   }
@@ -161,6 +168,12 @@ export class ChartInteractionFactory {
           }
         }
 
+        // Notify time range changes during pan
+        const xAxis = chart.scales['x'];
+        if (xAxis && typeof xAxis.min === 'number' && typeof xAxis.max === 'number') {
+          this.notifyTimeRangeChanged(chart, { min: xAxis.min, max: xAxis.max });
+        }
+
         // Always return true to allow the built-in pan functionality
         return true;
       },
@@ -169,6 +182,12 @@ export class ChartInteractionFactory {
         console.log(`✅ Pan complete - ${chartType} chart`);
         if (ctx && ctx.chart) {
           ctx.chart[`${chartType}ChartPanEvent`] = false;
+          
+          // Final time range update after pan
+          const xAxis = ctx.chart.scales['x'];
+          if (xAxis && typeof xAxis.min === 'number' && typeof xAxis.max === 'number') {
+            this.notifyTimeRangeChanged(ctx.chart, { min: xAxis.min, max: xAxis.max });
+          }
         }
       }
     };
@@ -283,17 +302,32 @@ export class ChartInteractionFactory {
     }
 
     try {
-      console.log(`🔄 Syncing zoom: ${sourceType} → ${pairedType}`);
+      console.log(`🔄 Syncing zoom: ${sourceType} → ${pairedType}`, zoomParams);
       
-      // Use async zoom optimizer for better performance
-      this.zoomOptimizer.scheduleZoom(
-        pairedChart, 
-        'zoom', 
-        zoomParams, 
-        'high'
-      );
+      // Set flag to prevent sync loop
+      pairedChart[`${pairedType}ChartZoomEvent`] = true;
+      
+      // Direct synchronization for immediate response
+      const pairedXAxis = pairedChart.scales['x'];
+      if (pairedXAxis) {
+        pairedXAxis.min = zoomParams.min;
+        pairedXAxis.max = zoomParams.max;
+        pairedChart.update('none'); // Use 'none' for fastest update
+        
+        console.log(`✅ ${pairedType} chart synchronized to:`, { 
+          min: new Date(zoomParams.min).toISOString(), 
+          max: new Date(zoomParams.max).toISOString() 
+        });
+      }
+      
+      // Reset flag after a brief delay
+      setTimeout(() => {
+        pairedChart[`${pairedType}ChartZoomEvent`] = false;
+      }, 50);
+      
     } catch (error) {
       console.warn('⚠️ Chart zoom sync error:', error);
+      pairedChart[`${pairedType}ChartZoomEvent`] = false;
     }
   }
 
@@ -313,38 +347,43 @@ export class ChartInteractionFactory {
     const pairedType = sourceType === 'price' ? 'volume' : 'price';
     
     // Prevent sync loops
-    if ((pairedChart)[`${pairedType}ChartPanEvent`]) {
+    if (pairedChart[`${pairedType}ChartPanEvent`]) {
       return;
     }
 
     try {
-      // Set flag to prevent infinite loops
-      (sourceChart as any)[`${sourceType}ChartPanEvent`] = true;
-      
       console.log(`🔄 Syncing pan: ${sourceType} → ${pairedType}, deltaX=${deltaX}`);
       
-      // Calculate pan amount based on chart dimensions
-      const xAxis = pairedChart.scales['x'];
-      if (!xAxis || typeof xAxis.min !== 'number' || typeof xAxis.max !== 'number') {
+      // Set flag to prevent sync loop
+      pairedChart[`${pairedType}ChartPanEvent`] = true;
+      
+      // Get the current range from source chart for exact synchronization
+      const sourceXAxis = sourceChart.scales['x'];
+      const pairedXAxis = pairedChart.scales['x'];
+      
+      if (!sourceXAxis || !pairedXAxis || 
+          typeof sourceXAxis.min !== 'number' || typeof sourceXAxis.max !== 'number') {
         return;
       }
 
-      const canvasWidth = pairedChart.canvas?.clientWidth || 800;
-      const range = xAxis.max - xAxis.min;
-      const panPercent = deltaX / canvasWidth;
-      const panAmount = range * panPercent * 0.8; // Reduced sensitivity
-
-      // Use async zoom optimizer for smooth panning
-      this.zoomOptimizer.scheduleZoom(
-        pairedChart, 
-        'pan', 
-        { deltaX: panAmount }, 
-        'high'
-      );
+      // Direct synchronization - copy exact time range from source chart
+      pairedXAxis.min = sourceXAxis.min;
+      pairedXAxis.max = sourceXAxis.max;
+      pairedChart.update('none'); // Use 'none' for fastest update
+      
+      console.log(`✅ ${pairedType} chart pan synchronized to:`, { 
+        min: new Date(sourceXAxis.min).toISOString(), 
+        max: new Date(sourceXAxis.max).toISOString() 
+      });
+      
+      // Reset flag after brief delay
+      setTimeout(() => {
+        pairedChart[`${pairedType}ChartPanEvent`] = false;
+      }, 50);
+      
     } catch (error) {
       console.warn('⚠️ Chart pan sync error:', error);
-    } finally {
-      (sourceChart as any)[`${sourceType}ChartPanEvent`] = false;
+      pairedChart[`${pairedType}ChartPanEvent`] = false;
     }
   }
 
@@ -443,6 +482,24 @@ export class ChartInteractionFactory {
     }
   }
   
+  /**
+   * Notify time range changes for time scale updates
+   */
+  private notifyTimeRangeChanged(chart: Chart, timeRange: { min: number, max: number }): void {
+    // Emit custom event that can be listened to by parent components
+    const event = new CustomEvent('timeRangeChanged', {
+      detail: {
+        chartId: (chart as any).id,
+        chartType: (chart as any).chartType,
+        timeRange
+      }
+    });
+    
+    if (chart.canvas) {
+      chart.canvas.dispatchEvent(event);
+    }
+  }
+
   /**
    * Cleanup method
    */

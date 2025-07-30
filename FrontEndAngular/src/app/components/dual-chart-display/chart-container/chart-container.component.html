@@ -68,6 +68,18 @@
   <div class="price-chart-container">
     <app-price-chart [chartData]="chartData" [chartColors]="chartColors"></app-price-chart>
     
+    <!-- Price Chart Time Scale -->
+    <div class="price-time-scale-wrapper">
+      <app-time-scale 
+        [startTime]="priceTimeRange.start"
+        [endTime]="priceTimeRange.end"
+        [totalDataStart]="totalTimeRange.start"
+        [totalDataEnd]="totalTimeRange.end"
+        [width]="priceChartWidth"
+        class="price-time-scale">
+      </app-time-scale>
+    </div>
+    
     <!-- Price Chart Scrollbar -->
     <div class="chart-scrollbar-container">
       <div class="chart-scrollbar" 
@@ -88,6 +100,18 @@
   <!-- Volume Chart Container -->
   <div class="volume-chart-container">
     <app-volume-chart [chartData]="chartData" [chartColors]="chartColors"></app-volume-chart>
+    
+    <!-- Volume Chart Time Scale -->
+    <div class="volume-time-scale-wrapper">
+      <app-time-scale 
+        [startTime]="volumeTimeRange.start"
+        [endTime]="volumeTimeRange.end"
+        [totalDataStart]="totalTimeRange.start"
+        [totalDataEnd]="totalTimeRange.end"
+        [width]="volumeChartWidth"
+        class="volume-time-scale">
+      </app-time-scale>
+    </div>
     
     <!-- Volume Chart Scrollbar -->
     <div class="chart-scrollbar-container">

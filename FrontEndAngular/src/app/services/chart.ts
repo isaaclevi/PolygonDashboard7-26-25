@@ -658,6 +658,63 @@ export class ChartService {
     
     // Link charts in the interaction factory for synchronized interactions
     this.interactionFactory.linkCharts(priceChart, volumeChart);
+    
+    // Ensure initial synchronization
+    this.synchronizeChartTimeRanges(priceChart, volumeChart);
+  }
+
+  /**
+   * Synchronize time ranges between two charts to ensure they show the exact same time period
+   */
+  synchronizeChartTimeRanges(sourceChart: Chart, targetChart: Chart): void {
+    try {
+      const sourceXAxis = sourceChart.scales['x'];
+      const targetXAxis = targetChart.scales['x'];
+      
+      if (!sourceXAxis || !targetXAxis) {
+        console.warn('⚠️ Cannot synchronize charts: missing x-axis');
+        return;
+      }
+      
+      // Copy the exact time range from source to target
+      if (typeof sourceXAxis.min === 'number' && typeof sourceXAxis.max === 'number') {
+        targetXAxis.min = sourceXAxis.min;
+        targetXAxis.max = sourceXAxis.max;
+        targetChart.update('none');
+        
+        console.log('🔄 Charts synchronized:', {
+          min: new Date(sourceXAxis.min).toISOString(),
+          max: new Date(sourceXAxis.max).toISOString()
+        });
+      }
+    } catch (error) {
+      console.error('❌ Chart synchronization error:', error);
+    }
+  }
+
+  /**
+   * Force synchronization of both charts to match a specific time range
+   */
+  syncBothChartsToTimeRange(priceChart: Chart | undefined, volumeChart: Chart | undefined, startTime: number, endTime: number): void {
+    const charts = [priceChart, volumeChart].filter(chart => chart) as Chart[];
+    
+    charts.forEach(chart => {
+      try {
+        const xAxis = chart.scales['x'];
+        if (xAxis) {
+          xAxis.min = startTime;
+          xAxis.max = endTime;
+          chart.update('none');
+        }
+      } catch (error) {
+        console.error('❌ Error syncing chart to time range:', error);
+      }
+    });
+    
+    console.log('🔄 Both charts synced to time range:', {
+      start: new Date(startTime).toISOString(),
+      end: new Date(endTime).toISOString()
+    });
   }
 
   private syncPanBetweenCharts(targetChart: Chart, deltaX: number): void {

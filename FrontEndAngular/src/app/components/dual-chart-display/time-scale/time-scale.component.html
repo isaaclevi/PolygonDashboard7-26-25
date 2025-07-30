@@ -1,0 +1,23 @@
+<div class="time-scale-container" (click)="onTimeScaleClick($event)">
+  <!-- Time scale ruler -->
+  <div class="time-scale-ruler">
+    <!-- Tick marks and labels -->
+    <div class="time-scale-tick" 
+         *ngFor="let tick of ticks" 
+         [style.left.%]="tick.position"
+         [class.minor-tick]="tick.isMinor"
+         [class.major-tick]="!tick.isMinor">
+      <!-- Tick mark line -->
+      <div class="tick-mark"></div>
+      <!-- Tick label (only for major ticks) -->
+      <div class="tick-label" *ngIf="!tick.isMinor && tick.label">
+        {{ tick.label }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Optional: Visible range indicator -->
+<div class="visible-range-info" *ngIf="startTime && endTime">
+  <small>{{ getVisibleRangeLabel() }}</small>
+</div>

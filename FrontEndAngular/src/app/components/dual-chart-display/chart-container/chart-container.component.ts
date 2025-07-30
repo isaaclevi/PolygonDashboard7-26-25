@@ -1,6 +1,7 @@
-import { Component, Input, ViewChild, AfterViewInit, OnDestroy, HostListener, ElementRef } from '@angular/core';
+import { Component, Input, ViewChild, AfterViewInit, OnDestroy, OnChanges, SimpleChanges, HostListener, ElementRef } from '@angular/core';
 import { PriceChartComponent } from '../price-chart/price-chart.component';
 import { VolumeChartComponent } from '../volume-chart/volume-chart.component';
+import { TimeScaleComponent } from '../time-scale/time-scale.component';
 import { DualChartData } from '../../../models/stock-data.interface';
 import { ChartColorConfig } from '../../../models/chart-config.interface';
 import { CommonModule } from '@angular/common';
@@ -21,14 +22,19 @@ interface ScrollbarState {
   dragStartPosition: number;
 }
 
+interface TimeRange {
+  start: number;
+  end: number;
+}
+
 @Component({
   selector: 'app-chart-container',
   templateUrl: './chart-container.component.html',
   styleUrls: ['./chart-container.component.scss'],
   standalone: true,
-  imports: [PriceChartComponent, VolumeChartComponent, CommonModule, MatButtonModule, MatIconModule, MatTooltipModule]
+  imports: [PriceChartComponent, VolumeChartComponent, TimeScaleComponent, CommonModule, MatButtonModule, MatIconModule, MatTooltipModule]
 })
-export class ChartContainerComponent implements AfterViewInit, OnDestroy {
+export class ChartContainerComponent implements AfterViewInit, OnDestroy, OnChanges {
   @Input() chartData!: DualChartData;
   @Input() chartColors!: ChartColorConfig;
   
@@ -54,6 +60,16 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
   };
 
   private updateScrollbarInterval: any;
+  private currentlyDragging: 'price' | 'volume' | null = null;
+
+  // Total data time range
+  totalTimeRange: TimeRange = { start: 0, end: 0 };
+
+  // Individual chart time ranges for precise tracking
+  priceTimeRange: TimeRange = { start: 0, end: 0 };
+  volumeTimeRange: TimeRange = { start: 0, end: 0 };
+  priceChartWidth: number = 800;
+  volumeChartWidth: number = 800;
 
   constructor(private chartService: ChartService) {}
 
@@ -63,7 +79,16 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       this.linkCharts();
       this.startScrollbarSync();
       this.debugScrollbarSetup();
+      this.initializeTimeRanges();
+      this.startTimeRangeSync();
     }, 200);
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    // Update time ranges when chart data changes
+    if (changes['chartData'] && this.chartData) {
+      this.updateTotalTimeRange();
+    }
   }
   
   private debugScrollbarSetup(): void {
@@ -93,6 +118,97 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     }
   }
 
+  private initializeTimeRanges(): void {
+    this.updateTotalTimeRange();
+    this.updateIndividualChartTimeRanges();
+    this.updateIndividualChartWidths();
+    
+    console.log('📊 Time ranges initialized:', {
+      total: {
+        start: new Date(this.totalTimeRange.start).toISOString(),
+        end: new Date(this.totalTimeRange.end).toISOString()
+      },
+      price: {
+        start: new Date(this.priceTimeRange.start).toISOString(),
+        end: new Date(this.priceTimeRange.end).toISOString()
+      },
+      volume: {
+        start: new Date(this.volumeTimeRange.start).toISOString(),
+        end: new Date(this.volumeTimeRange.end).toISOString()
+      },
+      priceChartWidth: this.priceChartWidth,
+      volumeChartWidth: this.volumeChartWidth
+    });
+  }
+
+  private updateTotalTimeRange(): void {
+    if (!this.chartData || !this.chartData.priceData || this.chartData.priceData.length === 0) {
+      this.totalTimeRange = { start: 0, end: 0 };
+      return;
+    }
+
+    const priceData = this.chartData.priceData;
+    this.totalTimeRange = {
+      start: priceData[0].x,
+      end: priceData[priceData.length - 1].x
+    };
+  }
+
+
+  private updateIndividualChartTimeRanges(): void {
+    // Update price chart time range
+    const priceChart = this.priceChartComponent?.chart;
+    if (priceChart) {
+      const xAxis = priceChart.scales['x'];
+      if (xAxis && typeof xAxis.min === 'number' && typeof xAxis.max === 'number') {
+        this.priceTimeRange = {
+          start: xAxis.min,
+          end: xAxis.max
+        };
+      } else {
+        this.priceTimeRange = { ...this.totalTimeRange };
+      }
+    }
+
+    // Update volume chart time range
+    const volumeChart = this.volumeChartComponent?.chart;
+    if (volumeChart) {
+      const xAxis = volumeChart.scales['x'];
+      if (xAxis && typeof xAxis.min === 'number' && typeof xAxis.max === 'number') {
+        this.volumeTimeRange = {
+          start: xAxis.min,
+          end: xAxis.max
+        };
+      } else {
+        this.volumeTimeRange = { ...this.totalTimeRange };
+      }
+    }
+  }
+
+  private updateIndividualChartWidths(): void {
+    // Update price chart width
+    const priceChart = this.priceChartComponent?.chart;
+    if (priceChart && priceChart.canvas) {
+      this.priceChartWidth = priceChart.canvas.clientWidth || 800;
+    }
+
+    // Update volume chart width
+    const volumeChart = this.volumeChartComponent?.chart;
+    if (volumeChart && volumeChart.canvas) {
+      this.volumeChartWidth = volumeChart.canvas.clientWidth || 800;
+    }
+  }
+
+  private startTimeRangeSync(): void {
+    // Update time ranges more frequently than scrollbar sync for smoother updates
+    setInterval(() => {
+      if (!this.priceScrollState.isDragging && !this.volumeScrollState.isDragging) {
+        this.updateIndividualChartTimeRanges();
+        this.updateIndividualChartWidths();
+      }
+    }, 100); // Update every 100ms
+  }
+
   private linkCharts(): void {
     const priceChart = this.priceChartComponent?.chart;
     const volumeChart = this.volumeChartComponent?.chart;
@@ -100,13 +216,62 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     if (priceChart && volumeChart) {
       this.chartService.linkCharts(priceChart, volumeChart);
       console.log('Charts linked for synchronized zooming and scrolling');
+      
+      // Add event listeners for time range changes
+      this.setupTimeRangeListeners(priceChart);
+      this.setupTimeRangeListeners(volumeChart);
     }
+  }
+
+  private setupTimeRangeListeners(chart: Chart): void {
+    if (!chart.canvas) return;
+
+    chart.canvas.addEventListener('timeRangeChanged', (event: any) => {
+      const detail = event.detail;
+      console.log('📊 Time range changed:', detail);
+      
+      // Update individual chart time ranges immediately
+      if (detail.chartType === 'price') {
+        this.priceTimeRange = {
+          start: detail.timeRange.min,
+          end: detail.timeRange.max
+        };
+      } else if (detail.chartType === 'volume') {
+        this.volumeTimeRange = {
+          start: detail.timeRange.min,
+          end: detail.timeRange.max
+        };
+      }
+      
+      // Update chart widths if needed
+      this.updateIndividualChartWidths();
+      
+      // Ensure both charts are perfectly synchronized
+      const priceChart = this.priceChartComponent?.chart;
+      const volumeChart = this.volumeChartComponent?.chart;
+      
+      if (priceChart && volumeChart) {
+        // Sync the other chart and update its time range
+        if (detail.chartType === 'price') {
+          this.chartService.synchronizeChartTimeRanges(priceChart, volumeChart);
+          // Volume chart should match price chart exactly
+          this.volumeTimeRange = { ...this.priceTimeRange };
+        } else if (detail.chartType === 'volume') {
+          this.chartService.synchronizeChartTimeRanges(volumeChart, priceChart);
+          // Price chart should match volume chart exactly
+          this.priceTimeRange = { ...this.volumeTimeRange };
+        }
+      }
+    });
   }
 
   private startScrollbarSync(): void {
     // Update scrollbar positions less frequently to avoid interference with pan events
     this.updateScrollbarInterval = setInterval(() => {
-      this.updateScrollbarStates();
+      // Only update if neither scrollbar is being dragged
+      if (!this.priceScrollState.isDragging && !this.volumeScrollState.isDragging) {
+        this.updateScrollbarStates();
+      }
     }, 250); // Reduced from 100ms to 250ms for better pan responsiveness
   }
 
@@ -155,19 +320,29 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       const thumbSizePercent = (visibleRange / totalRange) * 100;
       scrollState.thumbSize = Math.max(5, Math.min(100, thumbSizePercent));
       
-      // Calculate position as percentage
+      // Calculate position as percentage - ensure it represents the actual visible start
       const visibleStart = Math.max(currentMin, dataStart);
-      const positionPercent = ((visibleStart - dataStart) / totalRange) * 100;
+      let positionPercent = 0;
+      
+      // Avoid division by zero when fully zoomed out
+      if (totalRange > visibleRange && totalRange > 0) {
+        positionPercent = ((visibleStart - dataStart) / totalRange) * 100;
+      }
+      
+      // Clamp position to valid range considering thumb size
       scrollState.position = Math.max(0, Math.min(100 - scrollState.thumbSize, positionPercent));
       
       // Log scrollbar state for debugging (reduce frequency)
-      if (Math.random() < 0.1) { // Log only 10% of the time to reduce noise
+      if (Math.random() < 0.05) { // Log only 5% of the time to reduce noise
         console.log('📊 Scrollbar state updated:', {
           chartType: (chart as any).chartType || 'unknown',
           thumbSize: scrollState.thumbSize.toFixed(1),
           position: scrollState.position.toFixed(1),
           visibleRange: Math.round(visibleRange),
-          totalRange: Math.round(totalRange)
+          totalRange: Math.round(totalRange),
+          visibleStart: new Date(visibleStart).toISOString(),
+          currentMin: new Date(currentMin).toISOString(),
+          currentMax: new Date(currentMax).toISOString()
         });
       }
 
@@ -198,6 +373,7 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     scrollState.isDragging = true;
     scrollState.dragStartX = clientX;
     scrollState.dragStartPosition = scrollState.position;
+    this.currentlyDragging = chartType;
     
     console.log(`📊 Initial scroll state:`, {
       position: scrollState.position,
@@ -245,6 +421,7 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     const handleDragEnd = () => {
       console.log(`✅ Ending scrollbar drag for ${chartType} chart`);
       scrollState.isDragging = false;
+      this.currentlyDragging = null;
       document.removeEventListener('mousemove', handleDrag as any);
       document.removeEventListener('mouseup', handleDragEnd);
       document.removeEventListener('touchmove', handleDrag as any);
@@ -278,51 +455,65 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       const dataEnd = new Date(data[data.length - 1].x).getTime();
       const totalRange = dataEnd - dataStart;
       
-      // Calculate the visible range based on current zoom level
       const xAxis = chart.scales['x'];
       if (!xAxis) {
         console.error(`❌ X-axis not found for ${chartType} chart`);
         return;
       }
       
-      const currentRange = xAxis.max - xAxis.min;
+      // Get the scrollbar state to determine the visible range
+      const scrollState = chartType === 'price' ? this.priceScrollState : this.volumeScrollState;
+      
+      // Calculate visible range based on thumb size percentage
+      const visibleRange = (scrollState.thumbSize / 100) * totalRange;
       
       // Calculate new start position based on scrollbar position
-      const newStart = dataStart + (position / 100) * totalRange;
-      const newEnd = newStart + currentRange;
+      // Ensure the visible range stays within data bounds
+      const maxStartPosition = totalRange - visibleRange;
+      const newStart = dataStart + Math.min((position / 100) * totalRange, maxStartPosition);
+      const newEnd = newStart + visibleRange;
+      
+      // Ensure we don't go beyond data bounds
+      const clampedStart = Math.max(dataStart, Math.min(dataEnd - visibleRange, newStart));
+      const clampedEnd = clampedStart + visibleRange;
       
       console.log(`📊 Applying scrollbar position for ${chartType}:`, {
         position,
+        thumbSize: scrollState.thumbSize,
+        visibleRange: Math.round(visibleRange),
+        totalRange: Math.round(totalRange),
         dataStart: new Date(dataStart).toISOString(),
         dataEnd: new Date(dataEnd).toISOString(),
-        newStart: new Date(newStart).toISOString(),
-        newEnd: new Date(newEnd).toISOString(),
-        currentRange
+        newStart: new Date(clampedStart).toISOString(),
+        newEnd: new Date(clampedEnd).toISOString()
       });
       
-      // Update chart scale
-      xAxis.min = newStart;
-      xAxis.max = newEnd;
-      chart.update('none');
-
-      // Sync with the other chart
-      const otherChart = chartType === 'price' ? 
-        this.volumeChartComponent?.chart : 
-        this.priceChartComponent?.chart;
+      // Update both charts simultaneously for perfect synchronization
+      if (this.currentlyDragging === chartType) {
+        const priceChart = this.priceChartComponent?.chart;
+        const volumeChart = this.volumeChartComponent?.chart;
         
-      if (otherChart) {
-        const otherXAxis = otherChart.scales['x'];
-        if (otherXAxis) {
-          otherXAxis.min = newStart;
-          otherXAxis.max = newEnd;
-          otherChart.update('none');
-          
-          // Update the other scrollbar state
-          const otherScrollState = chartType === 'price' ? this.volumeScrollState : this.priceScrollState;
-          otherScrollState.position = position;
-          
-          console.log(`🔄 Synced ${chartType === 'price' ? 'volume' : 'price'} chart`);
-        }
+        // Use the chart service method to sync both charts to the exact same time range
+        this.chartService.syncBothChartsToTimeRange(priceChart, volumeChart, clampedStart, clampedEnd);
+        
+        // Update both scrollbar states to match
+        this.priceScrollState.position = position;
+        this.priceScrollState.thumbSize = scrollState.thumbSize;
+        this.volumeScrollState.position = position;
+        this.volumeScrollState.thumbSize = scrollState.thumbSize;
+        
+        // Update individual chart time ranges immediately
+        this.priceTimeRange = {
+          start: clampedStart,
+          end: clampedEnd
+        };
+        
+        this.volumeTimeRange = {
+          start: clampedStart,
+          end: clampedEnd
+        };
+        
+        console.log(`🔄 Both charts synchronized from ${chartType} scrollbar drag`);
       }
 
     } catch (error) {
@@ -371,6 +562,11 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     this.priceScrollState.thumbSize = 100;
     this.volumeScrollState.position = 0;
     this.volumeScrollState.thumbSize = 100;
+    
+    // Update time scales to show full range
+    this.updateTotalTimeRange();
+    this.priceTimeRange = { ...this.totalTimeRange };
+    this.volumeTimeRange = { ...this.totalTimeRange };
   }
 
   panLeft(): void {
@@ -379,6 +575,11 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     
     // Reduced pan distance for more responsive control
     this.chartService.panLeft(priceChart, volumeChart, 0.15);
+    
+    // Update time scales immediately
+    setTimeout(() => {
+      this.updateIndividualChartTimeRanges();
+    }, 50);
   }
 
   panRight(): void {
@@ -387,6 +588,11 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     
     // Reduced pan distance for more responsive control  
     this.chartService.panRight(priceChart, volumeChart, 0.15);
+    
+    // Update time scales immediately
+    setTimeout(() => {
+      this.updateIndividualChartTimeRanges();
+    }, 50);
   }
 
   zoomToLast24Hours(): void {
@@ -397,6 +603,14 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     const volumeChart = this.volumeChartComponent?.chart;
     
     this.chartService.panToDateRange(priceChart, volumeChart, startDate, endDate);
+    
+    // Update time scales to reflect new range
+    const timeRange = {
+      start: startDate.getTime(),
+      end: endDate.getTime()
+    };
+    this.priceTimeRange = { ...timeRange };
+    this.volumeTimeRange = { ...timeRange };
   }
 
   zoomToLastWeek(): void {
@@ -407,6 +621,14 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     const volumeChart = this.volumeChartComponent?.chart;
     
     this.chartService.panToDateRange(priceChart, volumeChart, startDate, endDate);
+    
+    // Update time scales to reflect new range
+    const timeRange = {
+      start: startDate.getTime(),
+      end: endDate.getTime()
+    };
+    this.priceTimeRange = { ...timeRange };
+    this.volumeTimeRange = { ...timeRange };
   }
 
   zoomToLastMonth(): void {
@@ -417,5 +639,13 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     const volumeChart = this.volumeChartComponent?.chart;
     
     this.chartService.panToDateRange(priceChart, volumeChart, startDate, endDate);
+    
+    // Update time scales to reflect new range
+    const timeRange = {
+      start: startDate.getTime(),
+      end: endDate.getTime()
+    };
+    this.priceTimeRange = { ...timeRange };
+    this.volumeTimeRange = { ...timeRange };
   }
 }
