@@ -2,7 +2,12 @@ import DatabaseService from '../services/DatabaseService';
 import logger from './logger';
 
 const createTables = async () => {
-  const client = await DatabaseService.getPool().connect();
+  const pool = DatabaseService.getPool();
+  if (!pool) {
+    logger.error('Database pool not available');
+    return;
+  }
+  const client = await pool.connect();
   try {
     await client.query(`
       CREATE TABLE IF NOT EXISTS trades (

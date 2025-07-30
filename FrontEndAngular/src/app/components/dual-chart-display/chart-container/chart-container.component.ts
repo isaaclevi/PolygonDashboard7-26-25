@@ -62,7 +62,29 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     setTimeout(() => {
       this.linkCharts();
       this.startScrollbarSync();
+      this.debugScrollbarSetup();
     }, 200);
+  }
+  
+  private debugScrollbarSetup(): void {
+    console.log('📊 Scrollbar setup debugging:');
+    console.log('Price scrollbar element:', this.priceScrollbarRef?.nativeElement);
+    console.log('Volume scrollbar element:', this.volumeScrollbarRef?.nativeElement);
+    console.log('Price chart:', this.priceChartComponent?.chart);
+    console.log('Volume chart:', this.volumeChartComponent?.chart);
+    
+    // Test scrollbar functionality
+    if (this.priceScrollbarRef?.nativeElement) {
+      console.log('✅ Price scrollbar element is accessible');
+    } else {
+      console.error('❌ Price scrollbar element not found');
+    }
+    
+    if (this.volumeScrollbarRef?.nativeElement) {
+      console.log('✅ Volume scrollbar element is accessible');
+    } else {
+      console.error('❌ Volume scrollbar element not found');
+    }
   }
 
   ngOnDestroy(): void {
@@ -82,10 +104,10 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
   }
 
   private startScrollbarSync(): void {
-    // Update scrollbar positions every 100ms when charts change
+    // Update scrollbar positions less frequently to avoid interference with pan events
     this.updateScrollbarInterval = setInterval(() => {
       this.updateScrollbarStates();
-    }, 100);
+    }, 250); // Reduced from 100ms to 250ms for better pan responsiveness
   }
 
   private updateScrollbarStates(): void {
@@ -111,6 +133,7 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       if (!xAxis || !data || data.length === 0) {
         scrollState.thumbSize = 100;
         scrollState.position = 0;
+        console.log('📊 Scrollbar state reset: no data or axis');
         return;
       }
 
@@ -122,32 +145,70 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       const totalRange = dataEnd - dataStart;
       const visibleRange = currentMax - currentMin;
       
+      if (totalRange <= 0 || visibleRange <= 0) {
+        scrollState.thumbSize = 100;
+        scrollState.position = 0;
+        return;
+      }
+      
       // Calculate thumb size as percentage of visible vs total data
-      scrollState.thumbSize = Math.max(5, Math.min(100, (visibleRange / totalRange) * 100));
+      const thumbSizePercent = (visibleRange / totalRange) * 100;
+      scrollState.thumbSize = Math.max(5, Math.min(100, thumbSizePercent));
       
       // Calculate position as percentage
       const visibleStart = Math.max(currentMin, dataStart);
-      const position = ((visibleStart - dataStart) / totalRange) * 100;
-      scrollState.position = Math.max(0, Math.min(100 - scrollState.thumbSize, position));
+      const positionPercent = ((visibleStart - dataStart) / totalRange) * 100;
+      scrollState.position = Math.max(0, Math.min(100 - scrollState.thumbSize, positionPercent));
+      
+      // Log scrollbar state for debugging (reduce frequency)
+      if (Math.random() < 0.1) { // Log only 10% of the time to reduce noise
+        console.log('📊 Scrollbar state updated:', {
+          chartType: (chart as any).chartType || 'unknown',
+          thumbSize: scrollState.thumbSize.toFixed(1),
+          position: scrollState.position.toFixed(1),
+          visibleRange: Math.round(visibleRange),
+          totalRange: Math.round(totalRange)
+        });
+      }
 
     } catch (error) {
-      console.warn('Error updating scrollbar state:', error);
+      console.warn('⚠️ Error updating scrollbar state:', error);
     }
   }
 
   startScrollbarDrag(event: MouseEvent | TouchEvent, chartType: 'price' | 'volume'): void {
     event.preventDefault();
+    event.stopPropagation();
+    
+    console.log(`👆 Starting scrollbar drag for ${chartType} chart`);
     
     const scrollState = chartType === 'price' ? this.priceScrollState : this.volumeScrollState;
     const clientX = event instanceof MouseEvent ? event.clientX : event.touches[0].clientX;
     
+    // Verify chart is available
+    const chart = chartType === 'price' ? 
+      this.priceChartComponent?.chart : 
+      this.volumeChartComponent?.chart;
+      
+    if (!chart) {
+      console.error(`❌ ${chartType} chart not available for scrollbar drag`);
+      return;
+    }
+    
     scrollState.isDragging = true;
     scrollState.dragStartX = clientX;
     scrollState.dragStartPosition = scrollState.position;
+    
+    console.log(`📊 Initial scroll state:`, {
+      position: scrollState.position,
+      thumbSize: scrollState.thumbSize,
+      dragStartX: scrollState.dragStartX
+    });
 
     // Add global event listeners for drag
     const handleDrag = (e: MouseEvent | TouchEvent) => {
       if (!scrollState.isDragging) return;
+      e.preventDefault();
       
       const currentX = e instanceof MouseEvent ? e.clientX : e.touches[0].clientX;
       const deltaX = currentX - scrollState.dragStartX;
@@ -157,6 +218,11 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
         this.priceScrollbarRef.nativeElement : 
         this.volumeScrollbarRef.nativeElement;
       
+      if (!scrollbarElement) {
+        console.error(`❌ Scrollbar element not found for ${chartType}`);
+        return;
+      }
+      
       const scrollbarWidth = scrollbarElement.offsetWidth;
       const deltaPercent = (deltaX / scrollbarWidth) * 100;
       
@@ -165,11 +231,19 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
         scrollState.dragStartPosition + deltaPercent
       ));
       
+      console.log(`📊 Scrollbar drag:`, {
+        deltaX,
+        deltaPercent,
+        newPosition,
+        scrollbarWidth
+      });
+      
       scrollState.position = newPosition;
       this.applyScrollbarPosition(chartType, newPosition);
     };
 
     const handleDragEnd = () => {
+      console.log(`✅ Ending scrollbar drag for ${chartType} chart`);
       scrollState.isDragging = false;
       document.removeEventListener('mousemove', handleDrag as any);
       document.removeEventListener('mouseup', handleDragEnd);
@@ -188,11 +262,17 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       this.priceChartComponent?.chart : 
       this.volumeChartComponent?.chart;
       
-    if (!chart) return;
+    if (!chart) {
+      console.error(`❌ ${chartType} chart not available for position update`);
+      return;
+    }
 
     try {
       const data = chart.data.datasets[0]?.data as any[];
-      if (!data || data.length === 0) return;
+      if (!data || data.length === 0) {
+        console.warn(`⚠️ No data available for ${chartType} chart`);
+        return;
+      }
 
       const dataStart = new Date(data[0].x).getTime();
       const dataEnd = new Date(data[data.length - 1].x).getTime();
@@ -200,11 +280,25 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
       
       // Calculate the visible range based on current zoom level
       const xAxis = chart.scales['x'];
+      if (!xAxis) {
+        console.error(`❌ X-axis not found for ${chartType} chart`);
+        return;
+      }
+      
       const currentRange = xAxis.max - xAxis.min;
       
       // Calculate new start position based on scrollbar position
       const newStart = dataStart + (position / 100) * totalRange;
       const newEnd = newStart + currentRange;
+      
+      console.log(`📊 Applying scrollbar position for ${chartType}:`, {
+        position,
+        dataStart: new Date(dataStart).toISOString(),
+        dataEnd: new Date(dataEnd).toISOString(),
+        newStart: new Date(newStart).toISOString(),
+        newEnd: new Date(newEnd).toISOString(),
+        currentRange
+      });
       
       // Update chart scale
       xAxis.min = newStart;
@@ -218,17 +312,21 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
         
       if (otherChart) {
         const otherXAxis = otherChart.scales['x'];
-        otherXAxis.min = newStart;
-        otherXAxis.max = newEnd;
-        otherChart.update('none');
-        
-        // Update the other scrollbar state
-        const otherScrollState = chartType === 'price' ? this.volumeScrollState : this.priceScrollState;
-        otherScrollState.position = position;
+        if (otherXAxis) {
+          otherXAxis.min = newStart;
+          otherXAxis.max = newEnd;
+          otherChart.update('none');
+          
+          // Update the other scrollbar state
+          const otherScrollState = chartType === 'price' ? this.volumeScrollState : this.priceScrollState;
+          otherScrollState.position = position;
+          
+          console.log(`🔄 Synced ${chartType === 'price' ? 'volume' : 'price'} chart`);
+        }
       }
 
     } catch (error) {
-      console.warn('Error applying scrollbar position:', error);
+      console.error(`❌ Error applying scrollbar position for ${chartType}:`, error);
     }
   }
 
@@ -279,14 +377,16 @@ export class ChartContainerComponent implements AfterViewInit, OnDestroy {
     const priceChart = this.priceChartComponent?.chart;
     const volumeChart = this.volumeChartComponent?.chart;
     
-    this.chartService.panLeft(priceChart, volumeChart, 0.2);
+    // Reduced pan distance for more responsive control
+    this.chartService.panLeft(priceChart, volumeChart, 0.15);
   }
 
   panRight(): void {
     const priceChart = this.priceChartComponent?.chart;
     const volumeChart = this.volumeChartComponent?.chart;
     
-    this.chartService.panRight(priceChart, volumeChart, 0.2);
+    // Reduced pan distance for more responsive control  
+    this.chartService.panRight(priceChart, volumeChart, 0.15);
   }
 
   zoomToLast24Hours(): void {

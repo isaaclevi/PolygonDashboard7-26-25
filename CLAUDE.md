@@ -106,6 +106,8 @@ ng e2e                      # Run end-to-end tests
 
 **StockApiService**: Stock data management and caching
 **ChartService**: Chart.js integration and configuration
+**ChartInteractionFactory**: Factory pattern for zoom/pan interactions
+**ZoomOptimizerService**: Async zoom operations and performance optimization
 **ChartSyncService**: Multi-chart synchronization
 
 ## Database Schema
@@ -180,6 +182,8 @@ LOG_LEVEL=info
 - **Standalone Components**: Modern Angular 20+ component architecture
 - **Reactive Programming**: RxJS for WebSocket data streams
 - **Socket-Only Communication**: No HTTP client usage for backend communication
+- **Factory Pattern**: ChartInteractionFactory for consistent zoom/pan behavior
+- **Async Chart Operations**: Performance-optimized zoom/pan with throttling and RAF scheduling
 - **Material Design**: Consistent UI with Angular Material components
 
 ## File Structure
@@ -295,12 +299,61 @@ docker-compose -f docker-compose.loadbalancer.yml up  # Start with load balancer
 - Validate and parse JSON messages from socket communications
 - Test responsive design across screen sizes
 - Show user-friendly error messages for socket failures
+- Use ChartInteractionFactory for consistent chart zoom/pan behavior
+- Register new charts with the factory for proper tracking and synchronization
 
 ### Cross-Application Considerations
 - Maintain independence between frontend and backend
 - Keep consistent JSON message structure across applications
 - Validate JSON data on both generation (backend) and consumption (frontend)
 - Ensure socket configuration matches between applications
+
+## Recent Changes (Latest Updates)
+
+### Chart Interaction Factory Pattern Implementation
+- **ChartInteractionFactory Service**: Created factory pattern for consistent zoom/pan behavior across all charts
+  - **Independent Charts**: Each chart operates separately without synchronization
+  - **Synchronized Charts**: Charts sync zoom/pan operations for aligned time-series analysis
+  - **Configurable Ctrl+Zoom**: Option to require Ctrl key for wheel zooming (prevents accidental zoom)
+  - **Performance Optimization**: Throttled events, async operations, and RAF scheduling
+  - **Type Safety**: Proper TypeScript typing with fallback mechanisms
+
+- **ChartService Updates**: Integrated factory pattern into existing chart creation methods
+  - **createPriceChart()**: Uses `createSynchronizedInteraction('price', true)` for linked behavior
+  - **createVolumeChart()**: Uses `createSynchronizedInteraction('volume', true)` for linked behavior
+  - **Chart Registration**: All charts registered with factory for tracking and synchronization
+  - **Chart Linking**: Enhanced linkCharts() method uses factory for cross-chart communication
+
+- **Zoom/Pan Configuration Factory Methods**:
+  - `createIndependentInteraction()`: For charts that operate separately
+  - `createSynchronizedInteraction()`: For charts that sync operations
+  - `createZoomConfiguration()`: Factory for zoom handler configuration
+  - `createPanConfiguration()`: Factory for pan handler configuration
+
+### Chart Performance Improvements
+- **ZoomOptimizerService**: Async zoom operations with priority queuing and RAF scheduling
+- **Web Worker Support**: Heavy calculations offloaded to zoom-worker.js for better performance
+- **Event Throttling**: ~60fps throttling for smooth interactions without performance impact
+- **Debounced Operations**: Rapid zoom/pan events debounced to prevent excessive processing
+- **Chart Instance Management**: Enhanced getAllActiveCharts() with fallback tracking system
+
+### Backend Communication Improvements  
+- **SocketService.ts**: Enhanced error handling for port conflicts, improved logging with WebSocket URLs
+- **SocketService.ts**: Added database status integration - status messages now include database connection state and mock mode indicators
+- **SocketService.ts**: Updated message timeout from 25s to 30s for alignment with frontend
+- **SocketService.ts**: Added DatabaseService import and `isDatabaseConnected()` method for real-time status reporting
+
+### Frontend Configuration Updates
+- **environment.ts**: Fixed health check URL from port 3001 to 3002 to match backend configuration
+- **environment.ts**: Added centralized timeout configuration (`connectionTimeout: 10000ms`, `messageTimeout: 30000ms`)
+- **socket.ts**: Updated to use environment-based timeout values instead of hardcoded timeouts
+
+### Enhanced Status Reporting
+- Status messages now include comprehensive system information:
+  - Database connection status and mock mode indication
+  - Active WebSocket connections count
+  - Socket server configuration details
+  - Real-time timestamp information
 
 ## Known Issues to Monitor
 - WebSocket connection stability with Polygon.io

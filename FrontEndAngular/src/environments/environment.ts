@@ -9,15 +9,19 @@ export const environment = {
   },
   
   // Health monitoring (read-only, not for data access)
-  healthCheckUrl: 'http://localhost:3001/health',
+  healthCheckUrl: 'http://localhost:3002/health',
   
   // Application settings
   defaultStocks: ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'SVIX'],
   
   // Auto-refresh configuration
-  chartRefreshInterval: 500, // 0.5 sound (500 ms) for chart data
-  tickerRefreshInterval: 500, // 0.5 sound (500 ms) for ticker data  
-  statusCheckInterval: 500, // 0.5 sound (500 ms) for backend status (more frequent for health monitoring)
+  chartRefreshInterval: 500, // 0.5 second (500 ms) for chart data
+  tickerRefreshInterval: 500, // 0.5 second (500 ms) for ticker data  
+  statusCheckInterval: 500, // 0.5 second (500 ms) for backend status (more frequent for health monitoring)
+  
+  // Connection timeout settings (aligned with backend)
+  connectionTimeout: 10000, // 10 seconds for initial connection
+  messageTimeout: 30000, // 30 seconds for message responses
   
   // Auto-refresh behavior
   autoRefresh: {

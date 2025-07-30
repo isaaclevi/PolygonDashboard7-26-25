@@ -23,6 +23,247 @@ interface AvailableData {
   dataTypes: string[];
 }
 
+// Strategy Pattern for different connection strategies
+abstract class ConnectionStrategy {
+  abstract connect(url: string): Promise<WebSocket>;
+  abstract disconnect(ws: WebSocket): void;
+  abstract send(ws: WebSocket, message: any): void;
+}
+
+class WebSocketStrategy extends ConnectionStrategy {
+  async connect(url: string): Promise<WebSocket> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(url);
+      
+      const connectionTimeout = setTimeout(() => {
+        ws.close();
+        reject(new Error('Connection timeout - please ensure the backend server is running'));
+      }, environment.connectionTimeout);
+      
+      ws.onopen = () => {
+        clearTimeout(connectionTimeout);
+        resolve(ws);
+      };
+      
+      ws.onerror = (error) => {
+        clearTimeout(connectionTimeout);
+        reject(new Error('WebSocket connection error - please ensure the backend server is running'));
+      };
+    });
+  }
+  
+  disconnect(ws: WebSocket): void {
+    if (ws && ws.readyState !== WebSocket.CLOSED) {
+      ws.close();
+    }
+  }
+  
+  send(ws: WebSocket, message: any): void {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    } else {
+      throw new Error('WebSocket not in OPEN state');
+    }
+  }
+}
+
+// State Pattern for connection states  
+abstract class ConnectionState {
+  protected context: SocketService;
+  
+  constructor(context: SocketService) {
+    this.context = context;
+  }
+  
+  abstract connect(): Promise<void>;
+  abstract disconnect(): void;
+  abstract send(message: any): Promise<SocketMessage>;
+}
+
+class DisconnectedState extends ConnectionState {
+  async connect(): Promise<void> {
+    if (this.context.isReconnecting) {
+      // Wait for existing reconnection attempt
+      return new Promise((resolve, reject) => {
+        const checkConnection = () => {
+          if (this.context.state instanceof ConnectedState) {
+            resolve();
+          } else if (!this.context.isReconnecting) {
+            reject(new Error('Connection attempt failed'));
+          } else {
+            setTimeout(checkConnection, 100);
+          }
+        };
+        checkConnection();
+      });
+    }
+    
+    this.context.isReconnecting = true;
+    this.context.setState(new ConnectingState(this.context));
+    
+    try {
+      await this.context.establishConnection();
+    } catch (error) {
+      this.context.isReconnecting = false;
+      throw error;
+    }
+  }
+  
+  disconnect(): void {
+    console.warn('⚠️ Socket Service: Already disconnected');
+  }
+  
+  async send(message: any): Promise<SocketMessage> {
+    console.log('🔄 Socket Service: Attempting to reconnect before sending message');
+    try {
+      await this.connect();
+      // After successful connection, delegate to the connected state
+      return await this.context.state.send(message);
+    } catch (error) {
+      throw new Error(`Cannot send message while disconnected: ${error}`);
+    }
+  }
+}
+
+class ConnectedState extends ConnectionState {
+  async connect(): Promise<void> {
+    console.warn('⚠️ Socket Service: Already connected');
+  }
+  
+  disconnect(): void {
+    this.context.closeConnection();
+    this.context.setState(new DisconnectedState(this.context));
+  }
+  
+  async send(message: any): Promise<SocketMessage> {
+    return this.context.sendMessageDirect(message);
+  }
+}
+
+class ConnectingState extends ConnectionState {
+  async connect(): Promise<void> {
+    console.warn('⚠️ Socket Service: Connection already in progress');
+  }
+  
+  disconnect(): void {
+    this.context.closeConnection();
+    this.context.setState(new DisconnectedState(this.context));
+  }
+  
+  async send(message: any): Promise<SocketMessage> {
+    console.log('⏳ Socket Service: Waiting for connection to complete before sending message');
+    // Wait for connection to be established, then send
+    return new Promise((resolve, reject) => {
+      const checkConnection = () => {
+        if (this.context.state instanceof ConnectedState) {
+          this.context.state.send(message).then(resolve).catch(reject);
+        } else if (this.context.state instanceof DisconnectedState) {
+          reject(new Error('Connection failed while waiting'));
+        } else {
+          // Still connecting, check again in 100ms
+          setTimeout(checkConnection, 100);
+        }
+      };
+      checkConnection();
+    });
+  }
+}
+
+// Observer Pattern for message handling
+interface MessageObserver {
+  onMessage(message: SocketMessage): void;
+}
+
+class MessageSubject {
+  private observers: MessageObserver[] = [];
+  
+  addObserver(observer: MessageObserver): void {
+    this.observers.push(observer);
+  }
+  
+  removeObserver(observer: MessageObserver): void {
+    const index = this.observers.indexOf(observer);
+    if (index > -1) {
+      this.observers.splice(index, 1);
+    }
+  }
+  
+  notifyObservers(message: SocketMessage): void {
+    this.observers.forEach(observer => observer.onMessage(message));
+  }
+}
+
+// Command Pattern for different message types
+abstract class MessageCommand {
+  abstract execute(): Promise<SocketMessage>;
+}
+
+class DownloadCommand extends MessageCommand {
+  constructor(
+    private socketService: SocketService,
+    private fileName?: string,
+    private symbol?: string,
+    private timeframe?: string,
+    private startDate?: string,
+    private endDate?: string
+  ) {
+    super();
+  }
+  
+  async execute(): Promise<SocketMessage> {
+    const message: Partial<SocketMessage> = {
+      type: 'download',
+      fileName: this.fileName,
+      symbol: this.symbol,
+      timeframe: this.timeframe,
+      startDate: this.startDate,
+      endDate: this.endDate
+    };
+    
+    return this.socketService.executeCommand(message);
+  }
+}
+
+class StatusCommand extends MessageCommand {
+  constructor(private socketService: SocketService) {
+    super();
+  }
+  
+  async execute(): Promise<SocketMessage> {
+    return this.socketService.executeCommand({ type: 'status' });
+  }
+}
+
+class ListCommand extends MessageCommand {
+  constructor(private socketService: SocketService) {
+    super();
+  }
+  
+  async execute(): Promise<SocketMessage> {
+    return this.socketService.executeCommand({ type: 'list' });
+  }
+}
+
+class TestCommand extends MessageCommand {
+  constructor(private socketService: SocketService) {
+    super();
+  }
+  
+  async execute(): Promise<SocketMessage> {
+    return this.socketService.executeCommand({ type: 'test' });
+  }
+}
+
+class SubscribeCommand extends MessageCommand {
+  constructor(private socketService: SocketService, private symbol: string) {
+    super();
+  }
+  
+  async execute(): Promise<SocketMessage> {
+    return this.socketService.executeCommand({ type: 'subscribe', symbol: this.symbol });
+  }
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -34,10 +275,136 @@ export class SocketService {
   private realTimeData = new Subject<any>();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
-  private reconnectDelay = 2000; // Start with 2 seconds
-  private isReconnecting = false;
+  private reconnectDelay = 2000;
+  public isReconnecting = false;
+  
+  // Pattern implementations
+  private connectionStrategy: ConnectionStrategy;
+  public state: ConnectionState;
+  private messageSubject: MessageSubject;
 
-  constructor() { }
+  constructor() {
+    this.connectionStrategy = new WebSocketStrategy();
+    this.state = new DisconnectedState(this);
+    this.messageSubject = new MessageSubject();
+  }
+  
+  // State Pattern methods
+  setState(state: ConnectionState): void {
+    this.state = state;
+  }
+  
+  async establishConnection(): Promise<void> {
+    try {
+      const socketUrl = `ws://${environment.socketConfig.host}:${environment.socketConfig.port}${environment.socketConfig.path}`;
+      console.log('🔌 Socket Service: Connecting to', socketUrl);
+      
+      this.ws = await this.connectionStrategy.connect(socketUrl);
+      this.setupEventHandlers();
+      this.setState(new ConnectedState(this));
+      
+      console.log('✅ Socket Service: Connected to backend successfully');
+      this.connectionStatus.next(true);
+      this.reconnectAttempts = 0;
+      this.isReconnecting = false;
+      this.reconnectDelay = 2000;
+    } catch (error) {
+      this.setState(new DisconnectedState(this));
+      throw error;
+    }
+  }
+  
+  closeConnection(): void {
+    if (this.ws) {
+      this.connectionStrategy.disconnect(this.ws);
+      this.ws = null;
+      this.connectionStatus.next(false);
+    }
+  }
+  
+  private setupEventHandlers(): void {
+    if (!this.ws) return;
+    
+    this.ws.onmessage = (event) => {
+      try {
+        const message: SocketMessage = JSON.parse(event.data);
+        console.log('📨 Socket Service: Received message', { type: message.type, id: message.id, dataSize: event.data.length });
+        
+        const handler = this.messageHandlers.get(message.id);
+        if (handler) {
+          this.messageHandlers.delete(message.id);
+          handler(message);
+        } else {
+          console.warn('⚠️ Socket Service: No handler found for message', { id: message.id, type: message.type });
+        }
+        
+        // Notify observers
+        this.messageSubject.notifyObservers(message);
+      } catch (error) {
+        console.error('❌ Socket Service: Error parsing message', error, 'Raw data:', event.data);
+      }
+    };
+    
+    this.ws.onclose = (event) => {
+      console.log('🔌 Socket Service: Connection closed', { code: event.code, reason: event.reason });
+      this.connectionStatus.next(false);
+      this.setState(new DisconnectedState(this));
+      
+      if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
+        this.scheduleReconnect();
+      }
+    };
+    
+    this.ws.onerror = (error) => {
+      console.error('❌ Socket Service: WebSocket error', error);
+      this.connectionStatus.next(false);
+      this.setState(new DisconnectedState(this));
+    };
+  }
+  
+  async sendMessageDirect(message: Partial<SocketMessage>): Promise<SocketMessage> {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      throw new Error('WebSocket not connected');
+    }
+    
+    return new Promise((resolve, reject) => {
+      const id = `msg_${++this.messageCounter}_${Date.now()}`;
+      const fullMessage: SocketMessage = { id, ...message } as SocketMessage;
+
+      console.log('📤 Socket Service: Sending message', { id, type: fullMessage.type, symbol: fullMessage.symbol });
+
+      this.messageHandlers.set(id, (response: SocketMessage) => {
+        if (response.error) {
+          console.error('❌ Socket Service: Received error response', { error: response.error, id });
+          reject(new Error(response.error));
+        } else {
+          console.log('✅ Socket Service: Received successful response', { type: response.type, id, dataSize: response.data ? JSON.stringify(response.data).length : 0 });
+          resolve(response);
+        }
+      });
+
+      try {
+        this.connectionStrategy.send(this.ws!, fullMessage);
+      } catch (sendError: any) {
+        this.messageHandlers.delete(id);
+        console.error('❌ Socket Service: Failed to send message', sendError);
+        reject(new Error(`Failed to send message: ${sendError?.message || 'Unknown error'}`));
+      }
+
+      setTimeout(() => {
+        if (this.messageHandlers.has(id)) {
+          this.messageHandlers.delete(id);
+          console.error('⏰ Socket Service: Operation timed out', { id, type: message.type });
+          reject(new Error('Socket operation timeout - backend may be unresponsive'));
+        }
+      }, environment.messageTimeout);
+    });
+  }
+  
+  // Command Pattern execution
+  async executeCommand(message: Partial<SocketMessage>): Promise<SocketMessage> {
+    return this.state.send(message);
+  }
 
   get isConnected$(): Observable<boolean> {
     return this.connectionStatus.asObservable();
@@ -48,106 +415,7 @@ export class SocketService {
   }
 
   private async ensureWebSocketConnection(): Promise<void> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      console.log('🔌 Socket Service: Already connected');
-      return;
-    }
-
-    if (this.isReconnecting) {
-      console.log('🔌 Socket Service: Already attempting reconnection');
-      // Wait for existing reconnection attempt
-      return new Promise((resolve, reject) => {
-        const checkConnection = () => {
-          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            console.log('🔌 Socket Service: Reconnection successful');
-            resolve();
-          } else if (!this.isReconnecting) {
-            console.error('🔌 Socket Service: Reconnection failed');
-            reject(new Error('Connection attempt failed - backend may not be running'));
-          } else {
-            setTimeout(checkConnection, 100);
-          }
-        };
-        checkConnection();
-      });
-    }
-
-    this.isReconnecting = true;
-    console.log('🔌 Socket Service: Attempting to connect to backend...');
-
-    return new Promise((resolve, reject) => {
-      try {
-        const socketUrl = `ws://${environment.socketConfig.host}:${environment.socketConfig.port}${environment.socketConfig.path}`;
-        console.log('🔌 Socket Service: Connecting to', socketUrl);
-
-        this.ws = new WebSocket(socketUrl);
-
-        // Set up a connection timeout
-        const connectionTimeout = setTimeout(() => {
-          if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
-            console.error('❌ Socket Service: Connection timeout - backend server may not be running');
-            this.ws.close();
-            this.isReconnecting = false;
-            reject(new Error('Connection timeout - please ensure the backend server is running on port 3001'));
-          }
-        }, 10000); // 10 second timeout
-
-        this.ws.onopen = () => {
-          clearTimeout(connectionTimeout);
-          console.log('✅ Socket Service: Connected to backend successfully');
-          this.connectionStatus.next(true);
-          this.reconnectAttempts = 0;
-          this.isReconnecting = false;
-          this.reconnectDelay = 2000; // Reset delay
-          resolve();
-        };
-
-        this.ws.onmessage = (event) => {
-          try {
-            const message: SocketMessage = JSON.parse(event.data);
-            console.log('📨 Socket Service: Received message', { type: message.type, id: message.id, dataSize: event.data.length });
-            
-            const handler = this.messageHandlers.get(message.id);
-            if (handler) {
-              this.messageHandlers.delete(message.id);
-              handler(message);
-            } else {
-              console.warn('⚠️ Socket Service: No handler found for message', { id: message.id, type: message.type });
-            }
-          } catch (error) {
-            console.error('❌ Socket Service: Error parsing message', error, 'Raw data:', event.data);
-          }
-        };
-
-        this.ws.onerror = (error) => {
-          clearTimeout(connectionTimeout);
-          console.error('❌ Socket Service: WebSocket error', error);
-          this.connectionStatus.next(false);
-          this.isReconnecting = false;
-          reject(new Error('WebSocket connection error - please ensure the backend server is running'));
-        };
-
-        this.ws.onclose = (event) => {
-          clearTimeout(connectionTimeout);
-          console.log('🔌 Socket Service: Connection closed', { code: event.code, reason: event.reason });
-          this.connectionStatus.next(false);
-          
-          if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.scheduleReconnect();
-          } else {
-            this.isReconnecting = false;
-            if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-              reject(new Error('Maximum reconnection attempts reached - backend server may be down'));
-            }
-          }
-        };
-
-      } catch (error) {
-        console.error('❌ Socket Service: Failed to create WebSocket connection', error);
-        this.isReconnecting = false;
-        reject(error);
-      }
-    });
+    await this.state.connect();
   }
 
   private scheduleReconnect(): void {
@@ -164,67 +432,18 @@ export class SocketService {
     try {
       console.log('📤 Socket Service: Attempting to send message', { type: message.type, symbol: message.symbol });
       await this.ensureWebSocketConnection();
+      return await this.executeCommand(message);
     } catch (connectionError: any) {
       console.error('❌ Socket Service: Failed to establish connection', connectionError);
       throw new Error(`Backend connection failed: ${connectionError?.message || 'Unknown error'}. Please ensure the backend server is running on port 3001.`);
     }
-
-    return new Promise((resolve, reject) => {
-      const id = `msg_${++this.messageCounter}_${Date.now()}`;
-      const fullMessage: SocketMessage = { id, ...message } as SocketMessage;
-
-      console.log('📤 Socket Service: Sending message', { id, type: fullMessage.type, symbol: fullMessage.symbol });
-
-      // Store message handler
-      this.messageHandlers.set(id, (response: SocketMessage) => {
-        if (response.error) {
-          console.error('❌ Socket Service: Received error response', { error: response.error, id });
-          reject(new Error(response.error));
-        } else {
-          console.log('✅ Socket Service: Received successful response', { type: response.type, id, dataSize: response.data ? JSON.stringify(response.data).length : 0 });
-          resolve(response);
-        }
-      });
-
-      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-        try {
-          const messageString = JSON.stringify(fullMessage);
-          console.log('📤 Socket Service: Sending JSON message', { size: messageString.length });
-          this.ws.send(messageString);
-        } catch (sendError: any) {
-          this.messageHandlers.delete(id);
-          console.error('❌ Socket Service: Failed to send message', sendError);
-          reject(new Error(`Failed to send message: ${sendError?.message || 'Unknown error'}`));
-        }
-      } else {
-        this.messageHandlers.delete(id);
-        console.error('❌ Socket Service: WebSocket not in OPEN state', { readyState: this.ws?.readyState });
-        reject(new Error('WebSocket connection lost - please try again'));
-      }
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
-        if (this.messageHandlers.has(id)) {
-          this.messageHandlers.delete(id);
-          console.error('⏰ Socket Service: Operation timed out', { id, type: message.type });
-          reject(new Error('Socket operation timeout - backend may be unresponsive'));
-        }
-      }, 30000);
-    });
   }
 
-  /**
-   * Downloads data from the backend via WebSocket.
-   * @param fileName The name of the file to download (for compatibility).
-   * @returns A promise that resolves with the JSON data.
-   */
   async downloadFile(fileName: string): Promise<any> {
     try {
       console.log(`📁 Socket Service: Requesting data ${fileName}`);
-      const response = await this.sendMessage({
-        type: 'download',
-        fileName: fileName
-      });
+      const command = new DownloadCommand(this, fileName);
+      const response = await command.execute();
       
       console.log(`📁 Socket Service: Downloaded data ${fileName}`, { size: JSON.stringify(response.data).length });
       return response.data;
@@ -235,23 +454,11 @@ export class SocketService {
     }
   }
 
-  /**
-   * Downloads data using specific parameters instead of filename.
-   * @param symbol Stock symbol (e.g., 'AAPL')
-   * @param timeframe Data timeframe (e.g., '1min', '1hour', '1day')
-   * @param startDate Start date in ISO format
-   * @param endDate End date in ISO format
-   */
   async downloadStockData(symbol: string, timeframe: string, startDate: string, endDate: string): Promise<any> {
     try {
       console.log(`📊 Socket Service: Requesting stock data`, { symbol, timeframe, startDate, endDate });
-      const response = await this.sendMessage({
-        type: 'download',
-        symbol: symbol,
-        timeframe: timeframe,
-        startDate: startDate,
-        endDate: endDate
-      });
+      const command = new DownloadCommand(this, undefined, symbol, timeframe, startDate, endDate);
+      const response = await command.execute();
       
       console.log(`📊 Socket Service: Downloaded stock data`, { symbol, dataSize: JSON.stringify(response.data).length });
       return response.data;
@@ -290,14 +497,11 @@ export class SocketService {
     );
   }
 
-  /**
-   * Lists available data types and symbols from the backend.
-   * @returns A promise that resolves with available data information.
-   */
   async listFiles(): Promise<string[]> {
     try {
       console.log('📋 Socket Service: Requesting available data list');
-      const response = await this.sendMessage({ type: 'list' });
+      const command = new ListCommand(this);
+      const response = await command.execute();
       
       if (response.data && response.data.symbols) {
         console.log('📋 Socket Service: Received available data', { symbolCount: response.data.symbols.length });
@@ -325,14 +529,11 @@ export class SocketService {
     );
   }
 
-  /**
-   * Gets system status from the backend.
-   * @returns A promise that resolves with status information.
-   */
   async getStatus(): Promise<any> {
     try {
       console.log('📊 Socket Service: Requesting system status');
-      const response = await this.sendMessage({ type: 'status' });
+      const command = new StatusCommand(this);
+      const response = await command.execute();
       
       console.log('📊 Socket Service: Received status', response.data);
       return response.data;
@@ -343,17 +544,11 @@ export class SocketService {
     }
   }
 
-  /**
-   * Subscribes to real-time data for a specific symbol.
-   * @param symbol The stock symbol to subscribe to.
-   */
   async subscribeToSymbol(symbol: string): Promise<void> {
     try {
       console.log('🔔 Socket Service: Subscribing to symbol', { symbol });
-      await this.sendMessage({
-        type: 'subscribe',
-        symbol: symbol
-      });
+      const command = new SubscribeCommand(this, symbol);
+      await command.execute();
       
       console.log('🔔 Socket Service: Successfully subscribed to', { symbol });
       
@@ -370,14 +565,11 @@ export class SocketService {
     return `${symbol}-${timeframe}-${startDate}-${endDate}.json`;
   }
 
-  /**
-   * Tests the connection to the backend.
-   * @returns A promise that resolves to true if connection is successful.
-   */
   async testConnection(): Promise<boolean> {
     try {
       console.log('🧪 Socket Service: Testing connection');
-      const response = await this.sendMessage({ type: 'test' });
+      const command = new TestCommand(this);
+      const response = await command.execute();
       
       console.log('🧪 Socket Service: Connection test successful');
       return response.success || false;
@@ -388,15 +580,17 @@ export class SocketService {
     }
   }
 
-  /**
-   * Disconnects from the WebSocket.
-   */
   disconnect(): void {
-    if (this.ws) {
-      console.log('🔌 Socket Service: Disconnecting from backend');
-      this.ws.close();
-      this.ws = null;
-      this.connectionStatus.next(false);
-    }
+    console.log('🔌 Socket Service: Disconnecting from backend');
+    this.state.disconnect();
+  }
+  
+  // Observer Pattern methods
+  addMessageObserver(observer: MessageObserver): void {
+    this.messageSubject.addObserver(observer);
+  }
+  
+  removeMessageObserver(observer: MessageObserver): void {
+    this.messageSubject.removeObserver(observer);
   }
 } 

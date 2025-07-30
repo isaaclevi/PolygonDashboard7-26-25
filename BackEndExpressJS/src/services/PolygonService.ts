@@ -50,21 +50,265 @@ export interface PolygonTickersResponse {
   next_url?: string;
 }
 
-class PolygonService {
-  private ws!: WebSocket;
-  private restApiBaseUrl = 'https://api.polygon.io';
-  private seenSymbols = new Set<string>(); // Track symbols we've seen
-  private lastTickerUpdate = 0; // Timestamp of last ticker file update trigger
+// Command Pattern for different message types
+interface MessageCommand {
+  execute(data: any): Promise<void>;
+}
 
-  constructor() {
+class TradeCommand implements MessageCommand {
+  async execute(message: any): Promise<void> {
+    const tradeData: CreateTradeInput = {
+      trade_id: message.i?.toString(),
+      symbol: message.sym,
+      timestamp: new Date(message.t),
+      open: message.p,
+      high: message.p,
+      low: message.p,
+      close: message.p,
+      volume: message.s || 0,
+      price: message.p,
+      quantity: message.s,
+      side: this.determineTradeSide(message.c),
+      timeframe: undefined,
+      source: 'polygon'
+    };
+
+    await DatabaseService.insertTradeData(tradeData);
+    logger.debug('Trade data processed', { symbol: message.sym, price: message.p });
+  }
+
+  private determineTradeSide(conditions: number[] = []): 'buy' | 'sell' | 'unknown' {
+    if (conditions.includes(1)) return 'buy';
+    if (conditions.includes(2)) return 'sell';
+    return 'unknown';
+  }
+}
+
+class QuoteCommand implements MessageCommand {
+  async execute(message: any): Promise<void> {
+    const quoteData: CreateTradeInput = {
+      symbol: message.sym,
+      timestamp: new Date(message.t),
+      open: message.bp,
+      high: Math.max(message.bp, message.ap),
+      low: Math.min(message.bp, message.ap),
+      close: message.ap,
+      volume: message.bs + message.as,
+      price: (message.bp + message.ap) / 2,
+      timeframe: undefined,
+      source: 'polygon'
+    };
+
+    await DatabaseService.insertTradeData(quoteData);
+    logger.debug('Quote data processed', { symbol: message.sym, bid: message.bp, ask: message.ap });
+  }
+}
+
+class AggregateCommand implements MessageCommand {
+  async execute(message: any): Promise<void> {
+    const aggregateData: CreateTradeInput = {
+      symbol: message.sym,
+      timestamp: new Date(message.s),
+      open: message.o,
+      high: message.h,
+      low: message.l,
+      close: message.c,
+      volume: message.v,
+      price: message.c,
+      timeframe: '1min',
+      source: 'polygon'
+    };
+
+    await DatabaseService.insertTradeData(aggregateData);
+    logger.debug('Aggregate minute data processed', { symbol: message.sym, close: message.c });
+  }
+}
+
+class StatusCommand implements MessageCommand {
+  async execute(message: any): Promise<void> {
+    logger.info('Polygon.io status update', { status: message.status, message: message.message });
+  }
+}
+
+// Factory Pattern for Command creation  
+class CommandFactory {
+  static createCommand(messageType: string): MessageCommand | null {
+    switch (messageType) {
+      case 'T': return new TradeCommand();
+      case 'Q': return new QuoteCommand();
+      case 'AM': return new AggregateCommand();
+      case 'status': return new StatusCommand();
+      default: return null;
+    }
+  }
+}
+
+// Observer Pattern for symbol tracking
+interface SymbolObserver {
+  onNewSymbol(symbol: string): void;
+}
+
+class TickerUpdateObserver implements SymbolObserver {
+  private lastUpdate = 0;
+  private readonly UPDATE_THROTTLE = 5 * 60 * 1000; // 5 minutes
+
+  onNewSymbol(symbol: string): void {
+    const now = Date.now();
+    
+    if (now - this.lastUpdate > this.UPDATE_THROTTLE) {
+      this.lastUpdate = now;
+      logger.info('Triggering ticker file regeneration due to new symbols');
+      
+      try {
+        const DataFileGeneratorFactory = require('../generators/DataFileGenerator').default;
+        const dataGenerator = DataFileGeneratorFactory.create();
+        
+        dataGenerator.generateTickersFile('stocks', true)
+          .then(() => dataGenerator.generateTickerIndex())
+          .then(() => dataGenerator.generateStatusFile())
+          .then(() => {
+            logger.info('Background ticker regeneration completed due to new symbols');
+          })
+          .catch((error: any) => {
+            logger.error('Background ticker regeneration failed', { error });
+          });
+      } catch (error) {
+        logger.error('Failed to trigger ticker regeneration', { error });
+      }
+    }
+  }
+}
+
+// State Pattern for WebSocket connection management
+abstract class ConnectionState {
+  protected context: PolygonService;
+
+  constructor(context: PolygonService) {
+    this.context = context;
+  }
+
+  abstract connect(): void;
+  abstract disconnect(): void;
+  abstract send(message: any): void;
+}
+
+class DisconnectedState extends ConnectionState {
+  connect(): void {
+    logger.info('Attempting to connect to Polygon.io WebSocket');
+    this.context.initializeWebSocket();
+  }
+
+  disconnect(): void {
+    logger.warn('Already disconnected');
+  }
+
+  send(message: any): void {
+    logger.error('Cannot send message while disconnected');
+  }
+}
+
+class ConnectedState extends ConnectionState {
+  connect(): void {
+    logger.warn('Already connected');
+  }
+
+  disconnect(): void {
+    this.context.closeWebSocket();
+    this.context.setState(new DisconnectedState(this.context));
+  }
+
+  send(message: any): void {
+    const ws = this.context.getWebSocket();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(message));
+    }
+  }
+}
+
+class ConnectingState extends ConnectionState {
+  connect(): void {
+    logger.warn('Connection already in progress');
+  }
+
+  disconnect(): void {
+    this.context.closeWebSocket();
+    this.context.setState(new DisconnectedState(this.context));
+  }
+
+  send(message: any): void {
+    logger.warn('Cannot send message while connecting');
+  }
+}
+
+// Singleton Pattern with improved structure
+class PolygonService {
+  private static instance: PolygonService;
+  private ws!: WebSocket;
+  private state: ConnectionState;
+  private restApiBaseUrl = 'https://api.polygon.io';
+  private seenSymbols = new Set<string>();
+  private observers: SymbolObserver[] = [];
+  private commandFactory = CommandFactory;
+
+  private constructor() {
+    this.state = new DisconnectedState(this);
+    this.addObserver(new TickerUpdateObserver());
     this.connect();
   }
 
-  private connect() {
+  public static getInstance(): PolygonService {
+    if (!PolygonService.instance) {
+      PolygonService.instance = new PolygonService();
+    }
+    return PolygonService.instance;
+  }
+
+  // Observer Pattern methods
+  addObserver(observer: SymbolObserver): void {
+    this.observers.push(observer);
+  }
+
+  removeObserver(observer: SymbolObserver): void {
+    const index = this.observers.indexOf(observer);
+    if (index > -1) {
+      this.observers.splice(index, 1);
+    }
+  }
+
+  private notifyObservers(symbol: string): void {
+    this.observers.forEach(observer => observer.onNewSymbol(symbol));
+  }
+
+  // State Pattern methods
+  setState(state: ConnectionState): void {
+    this.state = state;
+  }
+
+  getWebSocket(): WebSocket {
+    return this.ws;
+  }
+
+  closeWebSocket(): void {
+    if (this.ws) {
+      this.ws.close();
+    }
+  }
+
+  initializeWebSocket(): void {
+    this.setState(new ConnectingState(this));
+    this.setupWebSocket();
+  }
+
+  private connect(): void {
+    this.state.connect();
+  }
+
+  private setupWebSocket(): void {
     this.ws = new WebSocket('wss://socket.polygon.io/stocks');
 
     this.ws.on('open', () => {
       logger.info('Connected to Polygon.io WebSocket');
+      this.setState(new ConnectedState(this));
       this.authenticate();
     });
 
@@ -79,76 +323,55 @@ class PolygonService {
 
     this.ws.on('close', () => {
       logger.info('Disconnected from Polygon.io WebSocket. Reconnecting...');
-      // Increase reconnection delay to avoid hitting connection limits
-      setTimeout(() => this.connect(), 30000); // 30 seconds instead of 5
+      this.setState(new DisconnectedState(this));
+      setTimeout(() => this.connect(), 30000);
     });
 
     this.ws.on('error', (error) => {
       logger.error('Polygon.io WebSocket error', error);
-      // If we hit connection limits, wait longer before reconnecting
+      this.setState(new DisconnectedState(this));
       if (error.message && error.message.includes('Maximum number of websocket connections exceeded')) {
         logger.warn('Connection limit reached, waiting 2 minutes before reconnecting...');
-        setTimeout(() => this.connect(), 120000); // 2 minutes
+        setTimeout(() => this.connect(), 120000);
       }
     });
   }
 
-  private authenticate() {
-    this.ws.send(JSON.stringify({ action: 'auth', params: polygonConfig.apiKey }));
+  private authenticate(): void {
+    this.state.send({ action: 'auth', params: polygonConfig.apiKey });
   }
 
-  public subscribeToTrades(symbols: string[]) {
+  public subscribeToTrades(symbols: string[]): void {
     const message = {
       action: 'subscribe',
       params: symbols.map((s) => `T.${s}`).join(','),
     };
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-      logger.info(`Subscribed to trades for ${symbols.join(', ')}`);
-    } else {
-      this.ws.once('open', () => {
-        this.ws.send(JSON.stringify(message));
-        logger.info(`Subscribed to trades for ${symbols.join(', ')}`);
-      });
-    }
+    
+    this.state.send(message);
+    logger.info(`Subscribed to trades for ${symbols.join(', ')}`);
   }
 
-  public subscribeToQuotes(symbols: string[]) {
+  public subscribeToQuotes(symbols: string[]): void {
     const message = {
       action: 'subscribe',
       params: symbols.map((s) => `Q.${s}`).join(','),
     };
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-      logger.info(`Subscribed to quotes for ${symbols.join(', ')}`);
-    } else {
-      this.ws.once('open', () => {
-        this.ws.send(JSON.stringify(message));
-        logger.info(`Subscribed to quotes for ${symbols.join(', ')}`);
-      });
-    }
+    
+    this.state.send(message);
+    logger.info(`Subscribed to quotes for ${symbols.join(', ')}`);
   }
 
-  public subscribeToAggregates(symbols: string[]) {
+  public subscribeToAggregates(symbols: string[]): void {
     const message = {
       action: 'subscribe',
       params: symbols.map((s) => `AM.${s}`).join(','),
     };
-    if (this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-      logger.info(`Subscribed to aggregates for ${symbols.join(', ')}`);
-    } else {
-      this.ws.once('open', () => {
-        this.ws.send(JSON.stringify(message));
-        logger.info(`Subscribed to aggregates for ${symbols.join(', ')}`);
-      });
-    }
+    
+    this.state.send(message);
+    logger.info(`Subscribed to aggregates for ${symbols.join(', ')}`);
   }
 
-  /**
-   * Subscribe to all data types for given symbols
-   */
-  public subscribeToAllData(symbols: string[]) {
+  public subscribeToAllData(symbols: string[]): void {
     this.subscribeToTrades(symbols);
     this.subscribeToQuotes(symbols);
     this.subscribeToAggregates(symbols);
@@ -241,123 +464,35 @@ class PolygonService {
     }
   }
 
-  private async handleMessage(message: any) {
+  private async handleMessage(message: any): Promise<void> {
     try {
-      if (message.ev === 'T') {
-        // Check for new symbols and trigger ticker update if needed
+      // Check for new symbols first
+      if (message.sym) {
         await this.checkForNewSymbol(message.sym);
+      }
 
-        // Trade data - store as individual trade record
-        const tradeData: CreateTradeInput = {
-          trade_id: message.i?.toString(),
-          symbol: message.sym,
-          timestamp: new Date(message.t),
-          open: message.p, // Use trade price as OHLC values for individual trades
-          high: message.p,
-          low: message.p,
-          close: message.p,
-          volume: message.s || 0,
-          price: message.p,
-          quantity: message.s,
-          side: this.determineTradeSide(message.c),
-          timeframe: undefined, // Individual trades don't have timeframe
-          source: 'polygon'
-        };
-
-        await DatabaseService.insertTradeData(tradeData);
-        logger.debug('Trade data processed', { symbol: message.sym, price: message.p });
-
-      } else if (message.ev === 'Q') {
-        // Check for new symbols and trigger ticker update if needed
-        await this.checkForNewSymbol(message.sym);
-
-        // Quote data - store as current market data
-        const quoteData: CreateTradeInput = {
-          symbol: message.sym,
-          timestamp: new Date(message.t),
-          open: message.bp, // Use bid price as baseline
-          high: Math.max(message.bp, message.ap),
-          low: Math.min(message.bp, message.ap),
-          close: message.ap, // Use ask price as close
-          volume: message.bs + message.as, // Total bid + ask size
-          price: (message.bp + message.ap) / 2, // Mid-market price
-          timeframe: undefined, // Live quotes don't have timeframe
-          source: 'polygon'
-        };
-
-        await DatabaseService.insertTradeData(quoteData);
-        logger.debug('Quote data processed', { symbol: message.sym, bid: message.bp, ask: message.ap });
-
-      } else if (message.ev === 'AM') {
-        // Check for new symbols and trigger ticker update if needed
-        await this.checkForNewSymbol(message.sym);
-
-        // Aggregate Minute data - store with timeframe
-        const aggregateData: CreateTradeInput = {
-          symbol: message.sym,
-          timestamp: new Date(message.s), // Start time of the minute
-          open: message.o,
-          high: message.h,
-          low: message.l,
-          close: message.c,
-          volume: message.v,
-          price: message.c, // Close price as current price
-          timeframe: '1min',
-          source: 'polygon'
-        };
-
-        await DatabaseService.insertTradeData(aggregateData);
-        logger.debug('Aggregate minute data processed', { symbol: message.sym, close: message.c });
-
-      } else if (message.ev === 'status') {
-        logger.info('Polygon.io status update', { status: message.status, message: message.message });
+      // Use Command Pattern to handle different message types  
+      const command = this.commandFactory.createCommand(message.ev);
+      if (command) {
+        await command.execute(message);
+      } else {
+        logger.warn('Unknown message type', { eventType: message.ev });
       }
     } catch (error) {
       logger.error('Error processing Polygon.io message', { error, message });
     }
   }
 
-  /**
-   * Check if we've seen this symbol before and trigger ticker update if new
-   */
   private async checkForNewSymbol(symbol: string): Promise<void> {
     if (!this.seenSymbols.has(symbol)) {
       this.seenSymbols.add(symbol);
       logger.info(`New symbol detected from Polygon WebSocket: ${symbol}`);
       
-      // Throttle ticker updates to avoid excessive regeneration
-      const now = Date.now();
-      const TICKER_UPDATE_THROTTLE = 5 * 60 * 1000; // 5 minutes
-      
-      if (now - this.lastTickerUpdate > TICKER_UPDATE_THROTTLE) {
-        this.lastTickerUpdate = now;
-        logger.info('Triggering ticker file regeneration due to new symbols');
-        
-        // Import and trigger ticker regeneration in background
-        try {
-          const DataFileGeneratorFactory = require('../generators/DataFileGenerator').default;
-          const dataGenerator = DataFileGeneratorFactory.create();
-          
-          // Regenerate ticker file in background (non-blocking)
-          dataGenerator.generateTickersFile('stocks', true)
-            .then(() => dataGenerator.generateTickerIndex())
-            .then(() => dataGenerator.generateStatusFile())
-            .then(() => {
-              logger.info('Background ticker regeneration completed due to new symbols');
-            })
-            .catch((error: any) => {
-              logger.error('Background ticker regeneration failed', { error });
-            });
-        } catch (error) {
-          logger.error('Failed to trigger ticker regeneration', { error });
-        }
-      }
+      // Notify observers about new symbol
+      this.notifyObservers(symbol);
     }
   }
 
-  /**
-   * Manual method to force ticker regeneration (for testing/debugging)
-   */
   public async forceTickerRegeneration(): Promise<void> {
     logger.info('Manual ticker regeneration triggered');
     try {
@@ -375,23 +510,10 @@ class PolygonService {
     }
   }
 
-  /**
-   * Get currently seen symbols for debugging
-   */
   public getSeenSymbols(): string[] {
     return Array.from(this.seenSymbols).sort();
   }
 
-  /**
-   * Determine trade side from Polygon.io conditions array
-   */
-  private determineTradeSide(conditions: number[] = []): 'buy' | 'sell' | 'unknown' {
-    // Polygon.io trade conditions - simplified logic
-    // Condition 1 typically indicates buy, others may indicate sell or unknown
-    if (conditions.includes(1)) return 'buy';
-    if (conditions.includes(2)) return 'sell';
-    return 'unknown';
-  }
 }
 
-export default new PolygonService();
+export default PolygonService.getInstance();

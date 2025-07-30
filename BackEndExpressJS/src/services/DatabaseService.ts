@@ -10,117 +10,56 @@ import {
   dbRowToApiResponse
 } from '../models/Trades';
 
-class DatabaseService {
-  private readonly pool!: Pool;
-  private readonly mockMode: boolean = false; // Set to false to use real database
-  private readonly mockData: CreateTradeInput[] = []; // TEMPORARY: In-memory storage
-  private isConnected: boolean = false;
+// Strategy Pattern for Database Connection
+interface DatabaseStrategy {
+  connect(): Promise<void>;
+  insertTradeData(tradeInput: CreateTradeInput): Promise<void>;
+  getTradesData(params: TradesQueryParams): Promise<TradesApiResponse[]>;
+  insertAggregatedData(data: CreateTradeInput[]): Promise<void>;
+  getAvailableSymbols(): Promise<string[]>;
+  getLatestTimestamp(): Promise<Date | null>;
+  isConnected(): boolean;
+}
 
-  constructor() {
-    if (!this.mockMode) {
-      try {
-        this.pool = new Pool(dbConfig);
-        this.pool.on('connect', () => {
-          logger.info('Connected to the database');
-          this.isConnected = true;
-        });
-        this.pool.on('error', (err) => {
-          logger.error('Database connection error', err);
-          this.isConnected = false;
-        });
-        this.pool.on('end', () => {
-          logger.info('Database connection ended');
-          this.isConnected = false;
-        });
-      } catch (error) {
-        logger.error('Failed to create database pool', { error });
-        this.isConnected = false;
-      }
-    } else {
-      logger.info('DatabaseService running in MOCK MODE - no actual database connection');
-      this.initializeMockData();
-      this.isConnected = true; // Mock mode is always "connected"
-    }
+// Real Database Strategy
+class PostgreSQLStrategy implements DatabaseStrategy {
+  private readonly pool: Pool;
+  private connectionStatus: boolean = false;
+
+  constructor(config: any) {
+    this.pool = new Pool(config);
+    this.setupConnectionHandlers();
   }
 
-  private initializeMockData() {
-    // Add sample data for popular stocks for immediate chart functionality
-    const baseDate = new Date();
-    const symbols = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX'];
-    
-    symbols.forEach((symbol, symbolIndex) => {
-      const basePrice = 150 + symbolIndex * 50; // Different base prices for each stock
-      
-      // Generate 100 data points for the last 100 minutes (1min timeframe)
-      for (let i = 0; i < 100; i++) {
-        const timestamp = new Date(baseDate.getTime() - (100 - i) * 60 * 1000); // Go back 100 minutes
-        const priceVariation = (Math.random() - 0.5) * 10; // ±$5 variation
-        const open = basePrice + priceVariation;
-        const close = open + (Math.random() - 0.5) * 4; // ±$2 variation from open
-        const high = Math.max(open, close) + Math.random() * 2; // Up to $2 above
-        const low = Math.min(open, close) - Math.random() * 2; // Up to $2 below
-        const volume = Math.floor(Math.random() * 1000000) + 100000; // 100K to 1.1M volume
-        
-        this.mockData.push({
-          symbol,
-          timestamp: timestamp,
-          open,
-          high,
-          low,
-          close,
-          volume,
-          price: close,
-          timeframe: '1min',
-          source: 'manual'
-        });
-      }
+  private setupConnectionHandlers(): void {
+    this.pool.on('connect', () => {
+      logger.info('Connected to the database');
+      this.connectionStatus = true;
     });
     
-    logger.info(`Mock data initialized with ${this.mockData.length} data points for ${symbols.length} symbols`);
+    this.pool.on('error', (err) => {
+      logger.error('Database connection error', err);
+      this.connectionStatus = false;
+    });
   }
 
-  public async connect() {
-    if (!this.mockMode) {
-      try {
-        await this.pool.connect();
-        this.isConnected = true;
-        logger.info('Database connection established successfully');
-      } catch (error) {
-        logger.error('Failed to connect to the database', { error });
-        this.isConnected = false;
-        // Don't exit the process, let the application continue with degraded functionality
-        logger.warn('Continuing with degraded database functionality');
-      }
-    } else {
-      logger.info('Mock database connection established');
-      this.isConnected = true;
+  async connect(): Promise<void> {
+    try {
+      await this.pool.connect();
+      this.connectionStatus = true;
+      logger.info('Database connection established successfully');
+    } catch (error) {
+      logger.error('Failed to connect to the database', { error });
+      this.connectionStatus = false;
+      logger.warn('Continuing with degraded database functionality');
     }
   }
 
-  public getPool() {
-    return this.pool;
+  isConnected(): boolean {
+    return this.connectionStatus;
   }
 
-  public isDatabaseConnected(): boolean {
-    return this.isConnected;
-  }
-
-  /**
-   * Insert new trade data into the consolidated trades table
-   */
-  public async insertTradeData(tradeInput: CreateTradeInput): Promise<void> {
-    if (this.mockMode) {
-      // TEMPORARY: Store in memory and log
-      this.mockData.push(tradeInput);
-      logger.info('MOCK: Trade data would be inserted', { 
-        symbol: tradeInput.symbol, 
-        timestamp: tradeInput.timestamp,
-        price: tradeInput.price,
-        volume: tradeInput.volume
-      });
-      return;
-    }
-
+  async insertTradeData(tradeInput: CreateTradeInput): Promise<void> {
     const client = await this.pool.connect();
     try {
       const dbRow = apiInputToDbRow(tradeInput);
@@ -147,89 +86,9 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Retrieve trades data based on query parameters for FTP file generation
-   */
-  public async getTradesData(params: TradesQueryParams): Promise<TradesApiResponse[]> {
-    if (this.mockMode) {
-      // TEMPORARY: Return mock data
-      logger.info('MOCK: Would retrieve trades data', { params });
-      
-      // Check if we have data for this symbol
-      const existingData = this.mockData.filter(trade => trade.symbol === params.symbol);
-      
-      if (existingData.length === 0) {
-        // Generate mock data on-the-fly for this symbol
-        logger.info('MOCK: Generating data for new symbol', { symbol: params.symbol });
-        const baseDate = new Date();
-        const basePrice = 100 + Math.random() * 200; // Random base price between $100-$300
-        
-        const generatedData: TradesApiResponse[] = [];
-        
-        // Generate 50 data points for the requested time range
-        for (let i = 0; i < 50; i++) {
-          const timestamp = new Date(baseDate.getTime() - (50 - i) * 60 * 1000); // Go back 50 minutes
-          const priceVariation = (Math.random() - 0.5) * 10; // ±$5 variation
-          const open = basePrice + priceVariation;
-          const close = open + (Math.random() - 0.5) * 4; // ±$2 variation from open
-          const high = Math.max(open, close) + Math.random() * 2; // Up to $2 above
-          const low = Math.min(open, close) - Math.random() * 2; // Up to $2 below
-          const volume = Math.floor(Math.random() * 1000000) + 100000; // 100K to 1.1M volume
-          
-          generatedData.push({
-            timestamp: timestamp.toISOString(),
-            open,
-            high,
-            low,
-            close,
-            volume
-          });
-        }
-        
-        return generatedData.slice(0, params.limit || 100);
-      }
-      
-      return existingData
-        .slice(0, params.limit || 100)
-        .map(trade => ({
-          timestamp: trade.timestamp.toISOString(),
-          open: trade.open || trade.price,
-          high: trade.high || trade.price,
-          low: trade.low || trade.price,
-          close: trade.close || trade.price,
-          volume: trade.volume || 0
-        }));
-    }
-
-    if (!this.isConnected) {
-      logger.warn('Database not connected, returning mock data for trades');
-      // Return mock data when database is not connected
-      const baseDate = new Date();
-      const basePrice = 100 + Math.random() * 200; // Random base price between $100-$300
-      
-      const generatedData: TradesApiResponse[] = [];
-      
-      // Generate 50 data points for the requested time range
-      for (let i = 0; i < 50; i++) {
-        const timestamp = new Date(baseDate.getTime() - (50 - i) * 60 * 1000); // Go back 50 minutes
-        const priceVariation = (Math.random() - 0.5) * 10; // ±$5 variation
-        const open = basePrice + priceVariation;
-        const close = open + (Math.random() - 0.5) * 4; // ±$2 variation from open
-        const high = Math.max(open, close) + Math.random() * 2; // Up to $2 above
-        const low = Math.min(open, close) - Math.random() * 2; // Up to $2 below
-        const volume = Math.floor(Math.random() * 1000000) + 100000; // 100K to 1.1M volume
-        
-        generatedData.push({
-          timestamp: timestamp.toISOString(),
-          open,
-          high,
-          low,
-          close,
-          volume
-        });
-      }
-      
-      return generatedData.slice(0, params.limit || 100);
+  async getTradesData(params: TradesQueryParams): Promise<TradesApiResponse[]> {
+    if (!this.connectionStatus) {
+      throw new Error('Database not connected');
     }
 
     try {
@@ -273,47 +132,11 @@ class DatabaseService {
       }
     } catch (error) {
       logger.error('Failed to retrieve trades data', { error, params });
-      // Return mock data instead of throwing
-      logger.warn('Returning mock data due to database error');
-      const baseDate = new Date();
-      const basePrice = 100 + Math.random() * 200;
-      
-      const generatedData: TradesApiResponse[] = [];
-      
-      for (let i = 0; i < 50; i++) {
-        const timestamp = new Date(baseDate.getTime() - (50 - i) * 60 * 1000);
-        const priceVariation = (Math.random() - 0.5) * 10;
-        const open = basePrice + priceVariation;
-        const close = open + (Math.random() - 0.5) * 4;
-        const high = Math.max(open, close) + Math.random() * 2;
-        const low = Math.min(open, close) - Math.random() * 2;
-        const volume = Math.floor(Math.random() * 1000000) + 100000;
-        
-        generatedData.push({
-          timestamp: timestamp.toISOString(),
-          open,
-          high,
-          low,
-          close,
-          volume
-        });
-      }
-      
-      return generatedData.slice(0, params.limit || 100);
+      throw error;
     }
   }
 
-  /**
-   * Insert aggregated OHLCV data for specific timeframes
-   */
-  public async insertAggregatedData(data: CreateTradeInput[]): Promise<void> {
-    if (this.mockMode) {
-      // TEMPORARY: Add to mock data and log
-      this.mockData.push(...data);
-      logger.info('MOCK: Aggregated data would be inserted', { recordCount: data.length });
-      return;
-    }
-
+  async insertAggregatedData(data: CreateTradeInput[]): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -333,20 +156,9 @@ class DatabaseService {
     }
   }
 
-  /**
-   * Get available symbols for status reporting
-   */
-  public async getAvailableSymbols(): Promise<string[]> {
-    if (this.mockMode) {
-      // TEMPORARY: Return comprehensive list of symbols for mock mode
-      const symbols = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX', 'VXX', 'UVXY', 'UVIX', 'VIXY', 'TVIX', 'SPXS', 'SPXU', 'SQQQ'];
-      logger.info('MOCK: Available symbols', { symbols });
-      return symbols;
-    }
-
-    if (!this.isConnected) {
-      logger.warn('Database not connected, returning fallback symbols');
-      return ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX', 'VXX', 'UVXY', 'UVIX', 'VIXY', 'TVIX', 'SPXS', 'SPXU', 'SQQQ'];
+  async getAvailableSymbols(): Promise<string[]> {
+    if (!this.connectionStatus) {
+      throw new Error('Database not connected');
     }
 
     try {
@@ -359,27 +171,13 @@ class DatabaseService {
       }
     } catch (error) {
       logger.error('Failed to get available symbols', { error });
-      // Return fallback symbols instead of throwing
-      return ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX', 'VXX', 'UVXY', 'UVIX', 'VIXY', 'TVIX', 'SPXS', 'SPXU', 'SQQQ'];
+      throw error;
     }
   }
 
-  /**
-   * Get latest timestamp for data freshness monitoring
-   */
-  public async getLatestTimestamp(): Promise<Date | null> {
-    if (this.mockMode) {
-      // TEMPORARY: Return latest timestamp from mock data
-      if (this.mockData.length === 0) return null;
-      const latest = this.mockData.reduce((latest, trade) => 
-        new Date(trade.timestamp) > new Date(latest.timestamp) ? trade : latest
-      );
-      return new Date(latest.timestamp);
-    }
-
-    if (!this.isConnected) {
-      logger.warn('Database not connected, returning current timestamp as fallback');
-      return new Date();
+  async getLatestTimestamp(): Promise<Date | null> {
+    if (!this.connectionStatus) {
+      throw new Error('Database not connected');
     }
 
     try {
@@ -392,10 +190,264 @@ class DatabaseService {
       }
     } catch (error) {
       logger.error('Failed to get latest timestamp', { error });
-      // Return current timestamp as fallback instead of throwing
-      return new Date();
+      throw error;
     }
+  }
+
+  getPool(): Pool {
+    return this.pool;
   }
 }
 
-export default new DatabaseService();
+// Mock Database Strategy  
+class MockStrategy implements DatabaseStrategy {
+  private mockData: CreateTradeInput[] = [];
+  private readonly symbols = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX'];
+
+  constructor() {
+    this.initializeMockData();
+  }
+
+  private initializeMockData(): void {
+    const baseDate = new Date();
+    
+    this.symbols.forEach((symbol, symbolIndex) => {
+      const basePrice = 150 + symbolIndex * 50;
+      
+      for (let i = 0; i < 100; i++) {
+        const timestamp = new Date(baseDate.getTime() - (100 - i) * 60 * 1000);
+        const priceVariation = (Math.random() - 0.5) * 10;
+        const open = basePrice + priceVariation;
+        const close = open + (Math.random() - 0.5) * 4;
+        const high = Math.max(open, close) + Math.random() * 2;
+        const low = Math.min(open, close) - Math.random() * 2;
+        const volume = Math.floor(Math.random() * 1000000) + 100000;
+        
+        this.mockData.push({
+          symbol,
+          timestamp: timestamp,
+          open,
+          high,
+          low,
+          close,
+          volume,
+          price: close,
+          timeframe: '1min',
+          source: 'manual'
+        });
+      }
+    });
+    
+    logger.info(`Mock data initialized with ${this.mockData.length} data points for ${this.symbols.length} symbols`);
+  }
+
+  async connect(): Promise<void> {
+    logger.info('Mock database connection established');
+  }
+
+  isConnected(): boolean {
+    return true;
+  }
+
+  async insertTradeData(tradeInput: CreateTradeInput): Promise<void> {
+    this.mockData.push(tradeInput);
+    logger.info('MOCK: Trade data would be inserted', { 
+      symbol: tradeInput.symbol, 
+      timestamp: tradeInput.timestamp,
+      price: tradeInput.price,
+      volume: tradeInput.volume
+    });
+  }
+
+  async getTradesData(params: TradesQueryParams): Promise<TradesApiResponse[]> {
+    logger.info('MOCK: Would retrieve trades data', { params });
+    
+    const existingData = this.mockData.filter(trade => trade.symbol === params.symbol);
+    
+    if (existingData.length === 0) {
+      return this.generateMockData(params);
+    }
+    
+    return existingData
+      .slice(0, params.limit || 100)
+      .map(trade => ({
+        timestamp: trade.timestamp.toISOString(),
+        open: trade.open || trade.price,
+        high: trade.high || trade.price,
+        low: trade.low || trade.price,
+        close: trade.close || trade.price,
+        volume: trade.volume || 0
+      }));
+  }
+
+  private generateMockData(params: TradesQueryParams): TradesApiResponse[] {
+    logger.info('MOCK: Generating data for new symbol', { symbol: params.symbol });
+    const baseDate = new Date();
+    const basePrice = 100 + Math.random() * 200;
+    
+    const generatedData: TradesApiResponse[] = [];
+    
+    for (let i = 0; i < 50; i++) {
+      const timestamp = new Date(baseDate.getTime() - (50 - i) * 60 * 1000);
+      const priceVariation = (Math.random() - 0.5) * 10;
+      const open = basePrice + priceVariation;
+      const close = open + (Math.random() - 0.5) * 4;
+      const high = Math.max(open, close) + Math.random() * 2;
+      const low = Math.min(open, close) - Math.random() * 2;
+      const volume = Math.floor(Math.random() * 1000000) + 100000;
+      
+      generatedData.push({
+        timestamp: timestamp.toISOString(),
+        open,
+        high,
+        low,
+        close,
+        volume
+      });
+    }
+    
+    return generatedData.slice(0, params.limit || 100);
+  }
+
+  async insertAggregatedData(data: CreateTradeInput[]): Promise<void> {
+    this.mockData.push(...data);
+    logger.info('MOCK: Aggregated data would be inserted', { recordCount: data.length });
+  }
+
+  async getAvailableSymbols(): Promise<string[]> {
+    const symbols = ['AAPL', 'GOOGL', 'MSFT', 'TSLA', 'AMZN', 'WULF', 'SVIX', 'VXX', 'UVXY', 'UVIX', 'VIXY', 'TVIX', 'SPXS', 'SPXU', 'SQQQ'];
+    logger.info('MOCK: Available symbols', { symbols });
+    return symbols;
+  }
+
+  async getLatestTimestamp(): Promise<Date | null> {
+    if (this.mockData.length === 0) return null;
+    const latest = this.mockData.reduce((latest, trade) => 
+      new Date(trade.timestamp) > new Date(latest.timestamp) ? trade : latest
+    );
+    return new Date(latest.timestamp);
+  }
+}
+
+// Singleton Pattern with Strategy Pattern
+class DatabaseService {
+  private static instance: DatabaseService;
+  private strategy: DatabaseStrategy;
+  private readonly mockMode: boolean = false;
+
+  private constructor() {
+    this.strategy = this.mockMode 
+      ? new MockStrategy() 
+      : new PostgreSQLStrategy(dbConfig);
+  }
+
+  public static getInstance(): DatabaseService {
+    if (!DatabaseService.instance) {
+      DatabaseService.instance = new DatabaseService();
+    }
+    return DatabaseService.instance;
+  }
+
+  // Facade Pattern - Simple interface for complex operations
+  public async initialize(): Promise<void> {
+    try {
+      await this.strategy.connect();
+    } catch (error) {
+      logger.error('Failed to initialize database service', { error });
+      // Switch to mock strategy on failure
+      if (!(this.strategy instanceof MockStrategy)) {
+        logger.info('Switching to mock database strategy');
+        this.strategy = new MockStrategy();
+        await this.strategy.connect();
+      }
+    }
+  }
+
+  // Delegate methods to strategy
+  public async connect(): Promise<void> {
+    return this.strategy.connect();
+  }
+
+  public isDatabaseConnected(): boolean {
+    return this.strategy.isConnected();
+  }
+
+  public async insertTradeData(tradeInput: CreateTradeInput): Promise<void> {
+    try {
+      return await this.strategy.insertTradeData(tradeInput);
+    } catch (error) {
+      return this.handleFallback('insertTradeData', async () => {
+        await this.switchToMockStrategy();
+        return await this.strategy.insertTradeData(tradeInput);
+      });
+    }
+  }
+
+  public async getTradesData(params: TradesQueryParams): Promise<TradesApiResponse[]> {
+    try {
+      return await this.strategy.getTradesData(params);
+    } catch (error) {
+      return this.handleFallback('getTradesData', async () => {
+        await this.switchToMockStrategy();
+        return await this.strategy.getTradesData(params);
+      });
+    }
+  }
+
+  public async insertAggregatedData(data: CreateTradeInput[]): Promise<void> {
+    try {
+      return await this.strategy.insertAggregatedData(data);
+    } catch (error) {
+      return this.handleFallback('insertAggregatedData', async () => {
+        await this.switchToMockStrategy();
+        return await this.strategy.insertAggregatedData(data);
+      });
+    }
+  }
+
+  public async getAvailableSymbols(): Promise<string[]> {
+    try {
+      return await this.strategy.getAvailableSymbols();
+    } catch (error) {
+      return this.handleFallback('getAvailableSymbols', async () => {
+        await this.switchToMockStrategy();
+        return await this.strategy.getAvailableSymbols();
+      });
+    }
+  }
+
+  public async getLatestTimestamp(): Promise<Date | null> {
+    try {
+      return await this.strategy.getLatestTimestamp();
+    } catch (error) {
+      return this.handleFallback('getLatestTimestamp', async () => {
+        await this.switchToMockStrategy();
+        return await this.strategy.getLatestTimestamp();
+      });
+    }
+  }
+
+  // Template Method Pattern for error handling
+  private async handleFallback<T>(operation: string, fallbackFn: () => Promise<T>): Promise<T> {
+    logger.warn(`Database operation '${operation}' failed, switching to fallback`);
+    return await fallbackFn();
+  }
+
+  private async switchToMockStrategy(): Promise<void> {
+    if (!(this.strategy instanceof MockStrategy)) {
+      logger.info('Switching to mock database strategy due to error');
+      this.strategy = new MockStrategy();
+      await this.strategy.connect();
+    }
+  }
+
+  public getPool(): Pool | null {
+    if (this.strategy instanceof PostgreSQLStrategy) {
+      return (this.strategy as any).getPool();
+    }
+    return null;
+  }
+
+}
+
+export default DatabaseService.getInstance();
